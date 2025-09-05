@@ -10,6 +10,7 @@ import { Search, ExternalLink, Star } from "lucide-react"
 import Link from "next/link"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { toast } from "@/components/ui/use-toast"
+import { ClientOnly } from "@/components/client-only" // <-- The component is imported here
 
 // Mock data for resolved issues
 const resolvedIssues = [
@@ -91,7 +92,6 @@ export default function ResolvedIssuesPage() {
   const [categoryFilter, setCategoryFilter] = useState("all")
   const [feedbackFilter, setFeedbackFilter] = useState("all")
 
-  // Filter issues based on search query, category, and feedback status
   const filteredIssues = resolvedIssues.filter((issue) => {
     const matchesSearch =
       issue.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -242,7 +242,10 @@ export default function ResolvedIssuesPage() {
                           <p className="mt-1 text-sm text-green-800 dark:text-green-300">{issue.feedback.comment}</p>
                         )}
                         <p className="mt-1 text-xs text-green-700 dark:text-green-400">
-                          Submitted on {new Date(issue.feedback.submittedAt).toLocaleDateString()}
+                          Submitted on{" "}
+                          <ClientOnly>
+                            {new Date(issue.feedback.submittedAt).toLocaleDateString()}
+                          </ClientOnly>
                         </p>
                       </div>
                     ) : (
@@ -268,8 +271,9 @@ export default function ResolvedIssuesPage() {
                     <div className="flex items-center justify-between pt-2 text-xs text-muted-foreground">
                       <div className="flex items-center gap-4">
                         <span>ID: {issue.id}</span>
-                        <span>Reported: {new Date(issue.createdAt).toLocaleDateString()}</span>
-                        <span>Resolved: {new Date(issue.resolvedAt).toLocaleDateString()}</span>
+                        {/* Wrap the dates in the ClientOnly component */}
+                        <span>Reported: <ClientOnly>{new Date(issue.createdAt).toLocaleDateString()}</ClientOnly></span>
+                        <span>Resolved: <ClientOnly>{new Date(issue.resolvedAt).toLocaleDateString()}</ClientOnly></span>
                       </div>
                       <Button variant="ghost" size="sm" asChild>
                         <Link href={`/dashboard/issues/${issue.id}`}>
@@ -297,3 +301,5 @@ export default function ResolvedIssuesPage() {
     </div>
   )
 }
+
+
