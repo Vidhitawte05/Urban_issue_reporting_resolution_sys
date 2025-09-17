@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { supabase } from "@/lib/supabaseClient"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -17,61 +18,40 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
-// Mock data for my reports
-const myReports = [
-  {
-    id: "ISSUE-1234",
-    title: "Pothole on Main Street",
-    description: "Large pothole causing traffic issues",
-    status: "pending",
-    priority: "high",
-    location: "Sector 2, Main Street",
-    createdAt: "2023-04-15T10:30:00Z",
-    updatedAt: "2023-04-15T14:45:00Z",
-  },
-  {
-    id: "ISSUE-1235",
-    title: "Broken Street Light",
-    description: "Street light not working for past 3 days",
-    status: "in-progress",
-    priority: "medium",
-    location: "Sector 2, Park Avenue",
-    createdAt: "2023-04-14T08:20:00Z",
-    updatedAt: "2023-04-16T09:15:00Z",
-  },
-  {
-    id: "ISSUE-1236",
-    title: "Garbage Collection Missed",
-    description: "Garbage not collected for the past week",
-    status: "resolved",
-    priority: "medium",
-    location: "Sector 2, Residential Block C",
-    createdAt: "2023-04-10T11:45:00Z",
-    updatedAt: "2023-04-17T16:30:00Z",
-  },
-  {
-    id: "ISSUE-1237",
-    title: "Water Leakage",
-    description: "Water pipe leakage causing water logging",
-    status: "rejected",
-    priority: "high",
-    location: "Sector 2, Commercial Area",
-    createdAt: "2023-04-16T09:10:00Z",
-    updatedAt: "2023-04-16T09:10:00Z",
-    rejectionReason: "This issue is already reported and being addressed (ISSUE-1230).",
-  },
-]
-
 export default function MyReportsPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
+  const [myReports, setMyReports] = useState<any[]>([])
 
-  // Filter reports based on search query and status filter
+  useEffect(() => {
+    async function fetchReports() {
+      try {
+        // ⚡️ TEMP: remove user_id filter for testing
+        const { data, error } = await supabase
+          .from("issues")
+          .select("*")
+          .order("created_at", { ascending: false })
+
+        if (error) {
+          console.error("Error fetching reports:", error.message)
+        } else {
+          console.log("Fetched reports:", data) // 👈 check actual structure
+          setMyReports(data || [])
+        }
+      } catch (err) {
+        console.error("Unexpected error fetching reports:", err)
+      }
+    }
+
+    fetchReports()
+  }, [])
+
+  // ✅ Filter reports based on search query and status filter
   const filteredReports = myReports.filter((report) => {
     const matchesSearch =
-      report.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      report.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      report.location.toLowerCase().includes(searchQuery.toLowerCase())
+      (report.title?.toLowerCase() || "").includes(searchQuery.toLowerCase()) ||
+      (report.description?.toLowerCase() || "").includes(searchQuery.toLowerCase()) ||
+      (report.location?.toLowerCase() || "").includes(searchQuery.toLowerCase())
 
     const matchesStatus = statusFilter === "all" || report.status === statusFilter
 
@@ -152,14 +132,20 @@ export default function MyReportsPage() {
                   <div key={report.id} className="flex flex-col gap-2 rounded-lg border p-4">
                     <div className="flex items-start justify-between">
                       <div>
-                        <h3 className="font-semibold">{report.title}</h3>
-                        <p className="text-sm text-muted-foreground">{report.location}</p>
+                        <h3 className="font-semibold">{report.title || "(No title)"}</h3>
+                        <p className="text-sm text-muted-foreground">{report.location || "No location provided"}</p>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Badge className={`${getPriorityColor(report.priority)} text-white`}>{report.priority}</Badge>
-                        <Badge className={`${getStatusColor(report.status)} text-white`}>
-                          {report.status.replace("-", " ")}
-                        </Badge>
+                        {report.priority && (
+                          <Badge className={`${getPriorityColor(report.priority)} text-white`}>
+                            {report.priority}
+                          </Badge>
+                        )}
+                        {report.status && (
+                          <Badge className={`${getStatusColor(report.status)} text-white`}>
+                            {report.status.replace("-", " ")}
+                          </Badge>
+                        )}
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon">
@@ -185,18 +171,17 @@ export default function MyReportsPage() {
                         </DropdownMenu>
                       </div>
                     </div>
-                    <p className="text-sm">{report.description}</p>
-                    {report.rejectionReason && (
+                    <p className="text-sm">{report.description || "No description provided"}</p>
+                    {report.rejection_reason && (
                       <div className="mt-2 rounded-md bg-red-50 p-2 text-sm text-red-800 dark:bg-red-950 dark:text-red-300">
                         <span className="font-semibold">Rejection Reason: </span>
-                        {report.rejectionReason}
+                        {report.rejection_reason}
                       </div>
                     )}
                     <div className="flex items-center justify-between pt-2 text-xs text-muted-foreground">
                       <div className="flex items-center gap-4">
                         <span>ID: {report.id}</span>
-                        <span>Reported: {new Date(report.createdAt).toLocaleDateString()}</span>
-                        <span>Updated: {new Date(report.updatedAt).toLocaleDateString()}</span>
+                        <span>Reported: {new Date(report.created_at).toLocaleDateString()}</span>
                       </div>
                       <Button variant="ghost" size="sm" asChild>
                         <Link href={`/dashboard/issues/${report.id}`}>

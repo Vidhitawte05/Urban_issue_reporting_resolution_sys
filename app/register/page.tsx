@@ -1,9 +1,10 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -13,6 +14,9 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { UserPlus, ArrowLeft } from "lucide-react"
 
 export default function RegisterPage() {
+  const supabase = createClientComponentClient()
+  const router = useRouter()
+
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
@@ -25,16 +29,78 @@ export default function RegisterPage() {
     agreeToTerms: false,
   })
   const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
+    setError(null)
 
-    // Simulate API call
-    setTimeout(() => {
+    if (formData.password !== formData.confirmPassword) {
+      setError("Passwords do not match")
       setIsLoading(false)
-      // Redirect to login or dashboard
-    }, 2000)
+      return
+    }
+
+    try {
+      // 👇 Supabase signup
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password,
+        options: {
+          data: {
+            first_name: formData.firstName,
+            last_name: formData.lastName,
+            phone: formData.phone,
+            address: formData.address,
+            sector: formData.sector,
+          },
+        },
+      })
+
+      if (signUpError) {
+        setError(signUpError.message)
+        setIsLoading(false)
+        return
+      }
+
+      const user = data.user
+      if (user) {
+        // 👇 Check if profile exists
+        const { data: existingProfile } = await supabase
+          .from("profiles")
+          .select("id")
+          .eq("id", user.id)
+          .single()
+
+        if (!existingProfile) {
+          // 👇 Insert profile manually
+          const { error: profileError } = await supabase.from("profiles").insert({
+            id: user.id,
+            first_name: formData.firstName,
+            last_name: formData.lastName,
+            phone: formData.phone,
+            address: formData.address,
+            sector: formData.sector,
+          })
+
+          if (profileError) {
+            console.error("Profile insert error:", profileError.message)
+            setError("Failed to create profile. Please contact support.")
+            setIsLoading(false)
+            return
+          }
+        }
+      }
+
+      // Redirect to login after success
+      router.push("/login")
+    } catch (err) {
+      console.error(err)
+      setError("Something went wrong. Please try again.")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (
@@ -112,7 +178,10 @@ export default function RegisterPage() {
 
               <div>
                 <Label htmlFor="sector">Sector/District</Label>
-                <Select value={formData.sector} onValueChange={(value) => setFormData({ ...formData, sector: value })}>
+                <Select
+                  value={formData.sector}
+                  onValueChange={(value) => setFormData({ ...formData, sector: value })}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select your sector" />
                   </SelectTrigger>
@@ -148,11 +217,15 @@ export default function RegisterPage() {
                 />
               </div>
 
+              {error && <p className="text-red-500 text-sm">{error}</p>}
+
               <div className="flex items-center space-x-2">
                 <Checkbox
                   id="terms"
                   checked={formData.agreeToTerms}
-                  onCheckedChange={(checked) => setFormData({ ...formData, agreeToTerms: checked as boolean })}
+                  onCheckedChange={(checked) =>
+                    setFormData({ ...formData, agreeToTerms: checked as boolean })
+                  }
                 />
                 <Label htmlFor="terms" className="text-sm">
                   I agree to the{" "}

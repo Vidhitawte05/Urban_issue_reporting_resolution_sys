@@ -6,36 +6,28 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import * as z from "zod"
 import { Button } from "@/components/ui/button"
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
-import { Camera, MapPin, Upload } from "lucide-react"
+import { Camera, Upload } from "lucide-react"
 import { toast } from "@/components/ui/use-toast"
+import { supabase } from "@/lib/supabaseClient"
 
-// Define the structure and validation for the form
+// ✅ Validation schema
 const formSchema = z.object({
-  title: z.string().min(5, {
-    message: "Title must be at least 5 characters.",
-  }),
-  description: z.string().min(20, {
-    message: "Description must be at least 20 characters.",
-  }),
-  category: z.string({
-    required_error: "Please select a category.",
-  }),
-  location: z.string().min(5, {
-    message: "Location must be at least 5 characters.",
-  }),
+  title: z.string().min(5, { message: "Title must be at least 5 characters." }),
+  description: z.string().min(20, { message: "Description must be at least 20 characters." }),
+  category: z.string({ required_error: "Please select a category." }),
+  location: z.string().min(3, { message: "Location must be at least 3 characters." }),
   useCurrentLocation: z.boolean().default(false),
   priority: z.string().default("medium"),
 })
 
 export default function ReportIssuePage() {
   const [isLoading, setIsLoading] = useState(false)
-  // State to manage captured/uploaded images (the file object and its preview URL)
   const [capturedImages, setCapturedImages] = useState<{ file: File; preview: string }[]>([])
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -50,78 +42,92 @@ export default function ReportIssuePage() {
     },
   })
 
-  // This single handler works for both camera and file upload
+  // 📸 Handle image upload
   const handleImageAdd = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
-      const newImage = {
-        file,
-        preview: URL.createObjectURL(file),
-      }
-      setCapturedImages((prevImages) => [...prevImages, newImage])
-      toast({
-        title: "Image Added",
-        description: "Your photo has been attached to the report.",
-      })
+      const newImage = { file, preview: URL.createObjectURL(file) }
+      setCapturedImages((prev) => [...prev, newImage])
+      toast({ title: "Image Added", description: "Your photo has been attached." })
     }
-    // Reset the input value to allow selecting the same file again if needed
     e.target.value = ""
   }
-  
-  // Handles using the device's current location
+
+  // 📍 Use Current Location (with reverse geocoding)
   const handleUseCurrentLocation = (checked: boolean) => {
     form.setValue("useCurrentLocation", checked)
-    if (checked) {
-      // In a real app, this would use navigator.geolocation to get coordinates
-      form.setValue("location", "Current Location: Near Vashi Station, Navi Mumbai")
-      toast({
-        title: "Location Captured",
-        description: "Your current location has been set.",
-      })
+    if (checked && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          try {
+            const lat = pos.coords.latitude
+            const lng = pos.coords.longitude
+            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`)
+            const data = await res.json()
+            const address = data.display_name || `Lat: ${lat}, Lng: ${lng}`
+            form.setValue("location", address)
+            toast({ title: "Location Captured", description: address })
+          } catch (err) {
+            toast({ title: "Error", description: "Failed to fetch location name.", variant: "destructive" })
+          }
+        },
+        () => toast({ title: "Error", description: "Failed to fetch location.", variant: "destructive" })
+      )
     } else {
       form.setValue("location", "")
     }
   }
 
-  // Handles the final form submission
+  // 🚀 Submit
   async function onSubmit(values: z.infer<typeof formSchema>) {
     if (capturedImages.length === 0) {
-      toast({
-        title: "No Image Attached",
-        description: "Please take or upload at least one picture of the issue.",
-        variant: "destructive",
-      })
+      toast({ title: "No Image", description: "Attach at least one picture.", variant: "destructive" })
       return
     }
 
     setIsLoading(true)
+    try {
+      // Upload images
+      const uploadedImageUrls: string[] = []
+      for (const img of capturedImages) {
+        const fileExt = img.file.name.split(".").pop()
+        const fileName = `issues/${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
+        const { error: uploadError } = await supabase.storage.from("issues").upload(fileName, img.file)
+        if (uploadError) throw uploadError
+        const { data } = supabase.storage.from("issues").getPublicUrl(fileName)
+        uploadedImageUrls.push(data.publicUrl)
+      }
 
-    const formData = new FormData()
-    formData.append("title", values.title)
-    formData.append("description", values.description)
-    formData.append("category", values.category)
-    formData.append("location", values.location)
-    formData.append("priority", values.priority)
-    
-    capturedImages.forEach(img => {
-        formData.append("images", img.file)
-    })
+      // Get logged-in user
+      const { data: userData, error: userError } = await supabase.auth.getUser()
+      if (userError || !userData?.user) {
+        toast({ title: "Auth Error", description: "Login required.", variant: "destructive" })
+        setIsLoading(false)
+        return
+      }
 
-    console.log("Form Submitted:", {
-        ...values,
-        images: capturedImages.map(img => img.file.name)
-    })
+      // Call API route (server inserts using Service Role)
+      const res = await fetch("/api/issues", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...values,
+          images: uploadedImageUrls,
+          user_id: userData.user.id,
+        }),
+      })
 
-    await new Promise((resolve) => setTimeout(resolve, 1500))
+      const result = await res.json()
+      if (!res.ok) throw new Error(result.error)
 
-    toast({
-      title: "Issue Reported Successfully",
-      description: "Your report is now pending AI analysis and moderation.",
-    })
-
-    form.reset()
-    setCapturedImages([])
-    setIsLoading(false)
+      toast({ title: "Success", description: "Issue reported successfully." })
+      form.reset()
+      setCapturedImages([])
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message || "Something went wrong.", variant: "destructive" })
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (
@@ -139,7 +145,7 @@ export default function ReportIssuePage() {
         <CardContent>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
-              {/* Text Fields: Title, Description, Category */}
+              {/* Title */}
               <FormField control={form.control} name="title" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Issue Title</FormLabel>
@@ -147,22 +153,22 @@ export default function ReportIssuePage() {
                   <FormMessage />
                 </FormItem>
               )}/>
-              
+
+              {/* Description */}
               <FormField control={form.control} name="description" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Description</FormLabel>
-                  <FormControl><Textarea placeholder="Describe the issue in detail..." className="min-h-[120px]" {...field} /></FormControl>
+                  <FormControl><Textarea placeholder="Describe the issue..." className="min-h-[120px]" {...field} /></FormControl>
                   <FormMessage />
                 </FormItem>
               )}/>
 
+              {/* Category */}
               <FormField control={form.control} name="category" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Category</FormLabel>
                   <Select onValueChange={field.onChange} defaultValue={field.value}>
-                    <FormControl>
-                      <SelectTrigger><SelectValue placeholder="Select a category" /></SelectTrigger>
-                    </FormControl>
+                    <FormControl><SelectTrigger><SelectValue placeholder="Select a category" /></SelectTrigger></FormControl>
                     <SelectContent>
                       <SelectItem value="roads">Roads & Potholes</SelectItem>
                       <SelectItem value="water">Water Supply</SelectItem>
@@ -175,7 +181,7 @@ export default function ReportIssuePage() {
                 </FormItem>
               )}/>
 
-              {/* Location Input */}
+              {/* Location */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <FormLabel>Location</FormLabel>
@@ -186,35 +192,29 @@ export default function ReportIssuePage() {
                 </div>
                 <FormField control={form.control} name="location" render={({ field }) => (
                   <FormItem>
-                    <FormControl>
-                      <div className="flex gap-2">
-                        <Input placeholder="e.g., Near Inorbit Mall, Vashi" {...field} disabled={form.watch("useCurrentLocation")} />
-                        <Button type="button" variant="outline" size="icon" disabled={form.watch("useCurrentLocation")}><MapPin className="h-4 w-4" /></Button>
-                      </div>
-                    </FormControl>
+                    <FormControl><Input placeholder="e.g., Near Inorbit Mall, Vashi" {...field} disabled={form.watch("useCurrentLocation")} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )}/>
               </div>
 
-              {/* Image Capture and Upload Section */}
+              {/* Images */}
               <div className="space-y-2">
                 <FormLabel>Images</FormLabel>
-                <FormDescription>Take or upload photos of the issue.</FormDescription>
                 <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
-                  {capturedImages.map((image, index) => (
-                    <div key={index} className="relative aspect-square overflow-hidden rounded-md border">
-                      <Image src={image.preview} alt={`Preview ${index + 1}`} fill className="object-cover" onLoad={() => URL.revokeObjectURL(image.preview)} />
+                  {capturedImages.map((img, i) => (
+                    <div key={i} className="relative aspect-square overflow-hidden rounded-md border">
+                      <Image src={img.preview} alt={`Preview ${i + 1}`} fill className="object-cover" onLoad={() => URL.revokeObjectURL(img.preview)} />
                     </div>
                   ))}
-                  {/* "Take a Picture" button */}
+                  {/* Camera */}
                   <label htmlFor="image-capture" className="flex aspect-square cursor-pointer flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed bg-muted hover:bg-muted/80">
                     <Camera className="h-8 w-8 text-muted-foreground" />
-                    <span className="text-xs font-semibold text-muted-foreground">Take a Picture</span>
+                    <span className="text-xs font-semibold text-muted-foreground">Take Picture</span>
                   </label>
                   <input id="image-capture" type="file" accept="image/*" capture="environment" onChange={handleImageAdd} className="hidden" />
-                  
-                  {/* "Upload" button */}
+
+                  {/* Upload */}
                   <label htmlFor="image-upload" className="flex aspect-square cursor-pointer flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed bg-muted hover:bg-muted/80">
                     <Upload className="h-8 w-8 text-muted-foreground" />
                     <span className="text-xs font-semibold text-muted-foreground">Upload File</span>
@@ -224,7 +224,7 @@ export default function ReportIssuePage() {
               </div>
 
               <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? "Submitting Report..." : "Submit Report"}
+                {isLoading ? "Submitting..." : "Submit Report"}
               </Button>
             </form>
           </Form>

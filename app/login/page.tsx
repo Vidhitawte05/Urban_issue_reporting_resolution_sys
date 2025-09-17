@@ -1,59 +1,91 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Badge } from "@/components/ui/badge"
-import { Shield, User, Upload, FileText } from "lucide-react"
+import { User, Shield } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 
 export default function LoginPage() {
-  const [citizenForm, setCitizenForm] = useState({ email: "", password: "" })
-  const [adminForm, setAdminForm] = useState({
-    govId: "",
-    password: "",
-    department: "",
-    idProof: null as File | null,
-  })
-  const [isLoading, setIsLoading] = useState(false)
+  const supabase = createClientComponentClient()
   const router = useRouter()
 
-  const handleCitizenLogin = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsLoading(true)
+  const [citizenForm, setCitizenForm] = useState({ email: "", password: "" })
+  const [adminForm, setAdminForm] = useState({ govId: "", password: "" })
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-    // Simulate API call
-    setTimeout(() => {
-      setIsLoading(false)
-      // Redirect to citizen dashboard
-      router.push("/dashboard/")
-    }, 1500)
-  }
+  // 🔹 Citizen login
+const handleCitizenLogin = async (e: React.FormEvent) => {
+  e.preventDefault()
+  setIsLoading(true)
+  setError(null)
 
-  const handleAdminLogin = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsLoading(true)
+  try {
+    const { data, error: signInError } = await supabase.auth.signInWithPassword({
+      email: citizenForm.email,
+      password: citizenForm.password,
+    })
 
-    // Simulate API call with government ID verification
-    setTimeout(() => {
-      setIsLoading(false)
-      // Redirect to admin dashboard
-      router.push("/admin/dashboard")
-    }, 2000)
-  }
+    if (signInError) {
+      setError(signInError.message)
+    } else if (data.user) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", data.user.id)
+        .single()
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      setAdminForm({ ...adminForm, idProof: file })
+      if (profile?.role === "citizen") {
+        router.push("/dashboard")
+      } else {
+        setError("You are not authorized as a citizen.")
+      }
     }
+  } catch (err) {
+    setError("Something went wrong. Please try again.")
+  } finally {
+    setIsLoading(false)
   }
+}
+  // 🔹 Admin login
+const handleAdminLogin = async (e: React.FormEvent) => {
+  e.preventDefault()
+  setIsLoading(true)
+  setError(null)
 
+  try {
+    const { data, error: signInError } = await supabase.auth.signInWithPassword({
+      email: adminForm.govId,
+      password: adminForm.password,
+    })
+
+    if (signInError) {
+      setError(signInError.message)
+    } else if (data.user) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", data.user.id)
+        .single()
+
+      if (profile?.role === "admin") {
+        router.push("/admin/dashboard")
+      } else {
+        setError("You are not authorized as an admin.")
+      }
+    }
+  } catch (err) {
+    setError("Something went wrong. Please try again.")
+  } finally {
+    setIsLoading(false)
+  }
+}
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
@@ -74,6 +106,7 @@ export default function LoginPage() {
             </TabsTrigger>
           </TabsList>
 
+          {/* Citizen Login */}
           <TabsContent value="citizen">
             <Card>
               <CardHeader>
@@ -106,6 +139,7 @@ export default function LoginPage() {
                       required
                     />
                   </div>
+                  {error && <p className="text-red-500 text-sm">{error}</p>}
                   <Button type="submit" className="w-full" disabled={isLoading}>
                     {isLoading ? "Signing In..." : "Sign In"}
                   </Button>
@@ -114,6 +148,7 @@ export default function LoginPage() {
             </Card>
           </TabsContent>
 
+          {/* Admin Login */}
           <TabsContent value="admin">
             <Card>
               <CardHeader>
@@ -126,27 +161,17 @@ export default function LoginPage() {
               <CardContent>
                 <form onSubmit={handleAdminLogin} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="gov-id">Government ID Number</Label>
+                    <Label htmlFor="gov-id">Government ID (use as email)</Label>
                     <Input
                       id="gov-id"
-                      placeholder="GOV-ID-XXXXXXXX"
+                      placeholder="gov-official@example.com"
                       value={adminForm.govId}
                       onChange={(e) => setAdminForm({ ...adminForm, govId: e.target.value })}
                       required
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="department">Department</Label>
-                    <Input
-                      id="department"
-                      placeholder="e.g., Public Works, Health, Education"
-                      value={adminForm.department}
-                      onChange={(e) => setAdminForm({ ...adminForm, department: e.target.value })}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="admin-password">Secure Password</Label>
+                    <Label htmlFor="admin-password">Password</Label>
                     <Input
                       id="admin-password"
                       type="password"
@@ -155,42 +180,11 @@ export default function LoginPage() {
                       required
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="id-proof">Government ID Proof</Label>
-                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-gray-400 transition-colors">
-                      <input
-                        id="id-proof"
-                        type="file"
-                        accept=".pdf,.jpg,.jpeg,.png"
-                        onChange={handleFileUpload}
-                        className="hidden"
-                        required
-                      />
-                      <label htmlFor="id-proof" className="cursor-pointer">
-                        <Upload className="w-8 h-8 mx-auto mb-2 text-gray-400" />
-                        <p className="text-sm text-gray-600">
-                          {adminForm.idProof ? adminForm.idProof.name : "Upload ID Document"}
-                        </p>
-                        <p className="text-xs text-gray-500 mt-1">PDF, JPG, PNG (Max 5MB)</p>
-                      </label>
-                    </div>
-                    {adminForm.idProof && (
-                      <Badge variant="secondary" className="flex items-center gap-1 w-fit">
-                        <FileText className="w-3 h-3" />
-                        Document uploaded
-                      </Badge>
-                    )}
-                  </div>
+                  {error && <p className="text-red-500 text-sm">{error}</p>}
                   <Button type="submit" className="w-full" disabled={isLoading}>
-                    {isLoading ? "Verifying Credentials..." : "Secure Login"}
+                    {isLoading ? "Verifying..." : "Secure Login"}
                   </Button>
                 </form>
-                <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                  <p className="text-xs text-amber-800">
-                    <Shield className="w-3 h-3 inline mr-1" />
-                    This is a secure government portal. Unauthorized access is prohibited.
-                  </p>
-                </div>
               </CardContent>
             </Card>
           </TabsContent>

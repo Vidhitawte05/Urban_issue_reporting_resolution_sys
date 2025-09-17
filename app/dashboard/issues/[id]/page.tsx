@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -11,140 +11,47 @@ import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/components/ui/use-toast"
-import { CheckCircle, Clock, MapPin, MessageCircle, Share2, ThumbsUp } from "lucide-react"
-
-// Mock issue data
-const mockIssue = {
-  id: "ISSUE-1234",
-  title: "Pothole on Main Street",
-  description:
-    "Large pothole causing traffic issues and potential damage to vehicles. It's approximately 2 feet wide and 6 inches deep. The pothole has been there for over a week and is getting worse with each passing day. Several vehicles have already been damaged.",
-  status: "in-progress",
-  priority: "high",
-  location: "Sector 1, Main Street, Near City Park",
-  category: "roads",
-  reportedBy: {
-    name: "Rahul Sharma",
-    avatar: "/placeholder-user.jpg",
-    initials: "RS",
-  },
-  assignedTo: {
-    name: "Municipal Road Department",
-    contact: "roads@municipality.gov",
-  },
-  technician: {
-    name: "Rajesh Kumar",
-    contact: "rajesh@municipality.gov",
-  },
-  createdAt: "2023-04-15T10:30:00Z",
-  updatedAt: "2023-04-17T14:45:00Z",
-  estimatedResolutionDate: "2023-04-20",
-  images: [
-    "/placeholder.svg?height=400&width=600&text=Pothole Image 1",
-    "/placeholder.svg?height=400&width=600&text=Pothole Image 2",
-  ],
-  comments: [
-    {
-      id: 1,
-      user: {
-        name: "Rahul Sharma",
-        avatar: "/placeholder-user.jpg",
-        initials: "RS",
-      },
-      text: "I noticed this pothole while driving to work. It's quite dangerous and needs immediate attention.",
-      timestamp: "2023-04-15T10:35:00Z",
-    },
-    {
-      id: 2,
-      user: {
-        name: "Moderator",
-        avatar: "/placeholder-user.jpg",
-        initials: "MOD",
-      },
-      text: "Thank you for reporting this issue. It has been verified and assigned to the Municipal Road Department.",
-      timestamp: "2023-04-15T14:20:00Z",
-    },
-    {
-      id: 3,
-      user: {
-        name: "Municipal Road Department",
-        avatar: "/placeholder-user.jpg",
-        initials: "MRD",
-      },
-      text: "We have scheduled repairs for this pothole. A team will be dispatched within 48 hours.",
-      timestamp: "2023-04-16T09:15:00Z",
-    },
-    {
-      id: 4,
-      user: {
-        name: "Rajesh Kumar",
-        avatar: "/placeholder-user.jpg",
-        initials: "RK",
-      },
-      text: "I've inspected the site. The repair will require additional materials. We've scheduled the work for tomorrow morning.",
-      timestamp: "2023-04-17T14:45:00Z",
-    },
-  ],
-  timeline: [
-    {
-      id: 1,
-      title: "Issue Reported",
-      description: "Issue reported by Rahul Sharma",
-      timestamp: "2023-04-15T10:30:00Z",
-      icon: MessageCircle,
-      iconColor: "text-blue-500",
-    },
-    {
-      id: 2,
-      title: "Issue Verified",
-      description: "Issue verified by Sector 1 Moderator",
-      timestamp: "2023-04-15T14:00:00Z",
-      icon: CheckCircle,
-      iconColor: "text-green-500",
-    },
-    {
-      id: 3,
-      title: "Assigned to Department",
-      description: "Assigned to Municipal Road Department",
-      timestamp: "2023-04-15T14:20:00Z",
-      icon: Clock,
-      iconColor: "text-orange-500",
-    },
-    {
-      id: 4,
-      title: "Technician Assigned",
-      description: "Rajesh Kumar assigned to fix the issue",
-      timestamp: "2023-04-16T09:15:00Z",
-      icon: Clock,
-      iconColor: "text-orange-500",
-    },
-    {
-      id: 5,
-      title: "Site Inspection",
-      description: "Site inspected by Rajesh Kumar",
-      timestamp: "2023-04-17T10:30:00Z",
-      icon: CheckCircle,
-      iconColor: "text-green-500",
-    },
-    {
-      id: 6,
-      title: "In Progress",
-      description: "Repair work scheduled for tomorrow",
-      timestamp: "2023-04-17T14:45:00Z",
-      icon: Clock,
-      iconColor: "text-orange-500",
-    },
-  ],
-}
+import { MapPin, Share2, ThumbsUp } from "lucide-react"
+import { getIssueById, getComments, addComment } from "@/lib/issuesService"
 
 export default function IssueDetailPage() {
   const params = useParams()
-  const issueId = params.id
+  const issueId = params.id as string
+
+  const [issue, setIssue] = useState<any>(null)
+  const [comments, setComments] = useState<any[]>([])
   const [commentText, setCommentText] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  // In a real app, you would fetch the issue data based on the ID
-  const issue = mockIssue
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const issueData = await getIssueById(issueId)
+        const commentData = await getComments(issueId)
+        setIssue(issueData)
+        setComments(commentData)
+      } catch (err) {
+        setError("Failed to load issue details.")
+      }
+    }
+    if (issueId) fetchData()
+  }, [issueId])
+
+  const handleSubmitComment = async () => {
+    if (!commentText.trim()) return
+    setIsSubmitting(true)
+    try {
+      await addComment(issueId, "Rahul Sharma", commentText)
+      const updatedComments = await getComments(issueId)
+      setComments(updatedComments)
+      setCommentText("")
+      toast({ title: "Comment Added", description: "Your comment has been added successfully." })
+    } catch (err) {
+      toast({ title: "Error", description: "Failed to submit comment." })
+    }
+    setIsSubmitting(false)
+  }
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -172,30 +79,36 @@ export default function IssueDetailPage() {
     }
   }
 
-  const handleSubmitComment = () => {
-    if (!commentText.trim()) return
-
-    setIsSubmitting(true)
-
-    // In a real app, this would be an API call to submit the comment
-    setTimeout(() => {
-      setIsSubmitting(false)
-      setCommentText("")
-      toast({
-        title: "Comment Added",
-        description: "Your comment has been added successfully.",
-      })
-    }, 1000)
-  }
-
   const handleShareIssue = () => {
-    // In a real app, this would copy the issue URL to clipboard
-    navigator.clipboard.writeText(`https://urbanconnect.com/issues/${issue.id}`)
-    toast({
-      title: "Link Copied",
-      description: "Issue link copied to clipboard.",
-    })
+    if (!issue) return
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(`https://urbanconnect.com/issues/${issue.id}`)
+      toast({
+        title: "Link Copied",
+        description: "Issue link copied to clipboard.",
+      })
+    } else {
+      toast({
+        title: "Clipboard Error",
+        description: "Clipboard API not available.",
+      })
+    }
   }
+
+  if (error) {
+    return <div className="p-8 text-center text-red-500">{error}</div>
+  }
+
+  if (!issue) {
+    return <div className="p-8 text-center">Loading issue details...</div>
+  }
+
+  // Defensive fallback for arrays and nested objects
+  const images = Array.isArray(issue.images) ? issue.images : []
+  const timeline = Array.isArray(issue.timeline) ? issue.timeline : []
+  const reportedBy = issue.reportedBy ?? {}
+  const assignedTo = issue.assignedTo ?? {}
+  const technician = issue.technician ?? {}
 
   return (
     <div className="flex flex-col gap-6">
@@ -217,14 +130,14 @@ export default function IssueDetailPage() {
             {issue.id}
           </Button>
         </div>
-        <h1 className="text-3xl font-bold tracking-tight">{issue.title}</h1>
+        <h1 className="text-3xl font-bold tracking-tight">{issue.title ?? "Untitled Issue"}</h1>
         <div className="flex flex-wrap items-center gap-2">
-          <Badge className={`${getStatusColor(issue.status)} text-white`}>{issue.status.replace("-", " ")}</Badge>
-          <Badge className={`${getPriorityColor(issue.priority)} text-white`}>{issue.priority}</Badge>
+          <Badge className={`${getStatusColor(issue.status)} text-white`}>{issue.status?.replace("-", " ") ?? "unknown"}</Badge>
+          <Badge className={`${getPriorityColor(issue.priority)} text-white`}>{issue.priority ?? "unknown"}</Badge>
           <span className="text-sm text-muted-foreground">
-            Reported on {new Date(issue.createdAt).toLocaleDateString()}
+            Reported on {issue.createdAt ? new Date(issue.createdAt).toLocaleDateString() : "N/A"}
           </span>
-          <span className="text-sm text-muted-foreground">ID: {issue.id}</span>
+          <span className="text-sm text-muted-foreground">ID: {issue.id ?? "N/A"}</span>
         </div>
       </div>
 
@@ -237,27 +150,31 @@ export default function IssueDetailPage() {
             <CardContent className="space-y-4">
               <div>
                 <h3 className="font-semibold">Description</h3>
-                <p className="mt-1 text-muted-foreground">{issue.description}</p>
+                <p className="mt-1 text-muted-foreground">{issue.description ?? "No description provided."}</p>
               </div>
               <div>
                 <h3 className="font-semibold">Location</h3>
                 <div className="mt-1 flex items-start gap-2">
                   <MapPin className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
-                  <p className="text-muted-foreground">{issue.location}</p>
+                  <p className="text-muted-foreground">{issue.location ?? "Unknown"}</p>
                 </div>
               </div>
               <div>
                 <h3 className="font-semibold">Images</h3>
                 <div className="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  {issue.images.map((image, index) => (
-                    <div key={index} className="relative aspect-video overflow-hidden rounded-md border">
-                      <img
-                        src={image || "/placeholder.svg"}
-                        alt={`Issue image ${index + 1}`}
-                        className="h-full w-full object-cover"
-                      />
-                    </div>
-                  ))}
+                  {images.length > 0 ? (
+                    images.map((image: string, index: number) => (
+                      <div key={index} className="relative aspect-video overflow-hidden rounded-md border">
+                        <img
+                          src={image || "/placeholder.svg"}
+                          alt={`Issue image ${index + 1}`}
+                          className="h-full w-full object-cover"
+                        />
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-muted-foreground">No images available.</div>
+                  )}
                 </div>
               </div>
             </CardContent>
@@ -285,23 +202,26 @@ export default function IssueDetailPage() {
                   <CardDescription>Discussion about this issue</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {issue.comments.map((comment) => (
-                    <div key={comment.id} className="flex gap-4">
-                      <Avatar className="h-10 w-10">
-                        <AvatarImage src={comment.user.avatar || "/placeholder.svg"} alt={comment.user.name} />
-                        <AvatarFallback>{comment.user.initials}</AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold">{comment.user.name}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {new Date(comment.timestamp).toLocaleString()}
-                          </span>
+                  {comments.length > 0 ? (
+                    comments.map((comment) => (
+                      <div key={comment.id} className="flex gap-4">
+                        <Avatar className="h-10 w-10">
+                          <AvatarFallback>{comment.user_name?.[0] || "U"}</AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold">{comment.user_name ?? "Anonymous"}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {comment.created_at ? new Date(comment.created_at).toLocaleString() : ""}
+                            </span>
+                          </div>
+                          <p className="text-sm">{comment.text ?? ""}</p>
                         </div>
-                        <p className="text-sm">{comment.text}</p>
                       </div>
-                    </div>
-                  ))}
+                    ))
+                  ) : (
+                    <div className="text-muted-foreground">No comments yet.</div>
+                  )}
                 </CardContent>
                 <CardFooter>
                   <div className="flex w-full flex-col gap-2">
@@ -329,22 +249,30 @@ export default function IssueDetailPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="relative space-y-4 pl-6 before:absolute before:left-2 before:top-2 before:h-[calc(100%-16px)] before:w-[2px] before:bg-muted">
-                    {issue.timeline.map((event) => (
-                      <div key={event.id} className="relative">
-                        <div className="absolute -left-6 flex h-6 w-6 items-center justify-center rounded-full bg-background">
-                          <event.icon className={`h-4 w-4 ${event.iconColor}`} />
-                        </div>
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold">{event.title}</span>
-                            <span className="text-xs text-muted-foreground">
-                              {new Date(event.timestamp).toLocaleString()}
-                            </span>
+                    {timeline.length > 0 ? (
+                      timeline.map((event: any) => (
+                        <div key={event.id} className="relative">
+                          <div className="absolute -left-6 flex h-6 w-6 items-center justify-center rounded-full bg-background">
+                            {event.icon ? (
+                              <event.icon className={`h-4 w-4 ${event.iconColor ?? ""}`} />
+                            ) : (
+                              <MapPin className="h-4 w-4 text-muted-foreground" />
+                            )}
                           </div>
-                          <p className="text-sm text-muted-foreground">{event.description}</p>
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold">{event.title ?? "Event"}</span>
+                              <span className="text-xs text-muted-foreground">
+                                {event.timestamp ? new Date(event.timestamp).toLocaleString() : ""}
+                              </span>
+                            </div>
+                            <p className="text-sm text-muted-foreground">{event.description ?? ""}</p>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      ))
+                    ) : (
+                      <div className="text-muted-foreground">No timeline events available.</div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -360,36 +288,36 @@ export default function IssueDetailPage() {
             <CardContent className="space-y-4">
               <div className="space-y-1">
                 <span className="text-sm font-medium">Category</span>
-                <p className="text-sm text-muted-foreground capitalize">{issue.category.replace("-", " ")}</p>
+                <p className="text-sm text-muted-foreground capitalize">{issue.category?.replace("-", " ") ?? "N/A"}</p>
               </div>
               <Separator />
               <div className="space-y-1">
                 <span className="text-sm font-medium">Reported By</span>
                 <div className="flex items-center gap-2">
                   <Avatar className="h-6 w-6">
-                    <AvatarImage src={issue.reportedBy.avatar || "/placeholder.svg"} alt={issue.reportedBy.name} />
-                    <AvatarFallback>{issue.reportedBy.initials}</AvatarFallback>
+                    <AvatarImage src={reportedBy.avatar || "/placeholder.svg"} alt={reportedBy.name ?? "User"} />
+                    <AvatarFallback>{reportedBy.initials ?? "U"}</AvatarFallback>
                   </Avatar>
-                  <p className="text-sm text-muted-foreground">{issue.reportedBy.name}</p>
+                  <p className="text-sm text-muted-foreground">{reportedBy.name ?? "Unknown"}</p>
                 </div>
               </div>
               <Separator />
               <div className="space-y-1">
                 <span className="text-sm font-medium">Assigned Department</span>
-                <p className="text-sm text-muted-foreground">{issue.assignedTo.name}</p>
-                <p className="text-xs text-muted-foreground">{issue.assignedTo.contact}</p>
+                <p className="text-sm text-muted-foreground">{assignedTo.name ?? "N/A"}</p>
+                <p className="text-xs text-muted-foreground">{assignedTo.contact ?? ""}</p>
               </div>
               <Separator />
               <div className="space-y-1">
                 <span className="text-sm font-medium">Assigned Technician</span>
-                <p className="text-sm text-muted-foreground">{issue.technician.name}</p>
-                <p className="text-xs text-muted-foreground">{issue.technician.contact}</p>
+                <p className="text-sm text-muted-foreground">{technician.name ?? "N/A"}</p>
+                <p className="text-xs text-muted-foreground">{technician.contact ?? ""}</p>
               </div>
               <Separator />
               <div className="space-y-1">
                 <span className="text-sm font-medium">Estimated Resolution</span>
                 <p className="text-sm text-muted-foreground">
-                  {new Date(issue.estimatedResolutionDate).toLocaleDateString()}
+                  {issue.estimatedResolutionDate ? new Date(issue.estimatedResolutionDate).toLocaleDateString() : "N/A"}
                 </p>
               </div>
             </CardContent>

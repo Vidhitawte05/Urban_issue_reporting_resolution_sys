@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
@@ -12,9 +12,91 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { User, Bell, Shield, Palette, Mail, Phone, MapPin, Camera } from "lucide-react"
+import { supabase } from "@/lib/supabaseClient" // ✅ Supabase client
+import { toast } from "@/components/ui/use-toast" // ✅ Notification
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState("profile")
+  const [loading, setLoading] = useState(false)
+  const [profile, setProfile] = useState({
+    firstName: "",
+    lastName: "",
+    email: "",
+    phone: "",
+    address: "",
+    bio: "",
+    avatar_url: "",
+  })
+
+  // ✅ Fetch user profile on load
+  useEffect(() => {
+    const fetchProfile = async () => {
+      setLoading(true)
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser()
+
+      if (userError || !user) {
+        setLoading(false)
+        return
+      }
+
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("first_name, last_name, email, phone, address, bio, avatar_url")
+        .eq("id", user.id)
+        .single()
+
+      if (!error && data) {
+        setProfile({
+          firstName: data.first_name || "",
+          lastName: data.last_name || "",
+          email: data.email || user.email || "",
+          phone: data.phone || "",
+          address: data.address || "",
+          bio: data.bio || "",
+          avatar_url: data.avatar_url || "",
+        })
+      }
+      setLoading(false)
+    }
+
+    fetchProfile()
+  }, [])
+
+  // ✅ Save profile changes
+  const handleSaveProfile = async () => {
+    setLoading(true)
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    if (!user) {
+      toast({ title: "Error", description: "No user found", variant: "destructive" })
+      setLoading(false)
+      return
+    }
+
+    const { error } = await supabase.from("profiles").upsert({
+      id: user.id,
+      first_name: profile.firstName,
+      last_name: profile.lastName,
+      email: profile.email,
+      phone: profile.phone,
+      address: profile.address,
+      bio: profile.bio,
+      avatar_url: profile.avatar_url,
+      updated_at: new Date(),
+    })
+
+    if (error) {
+      toast({ title: "Error saving profile", description: error.message, variant: "destructive" })
+    } else {
+      toast({ title: "Profile updated", description: "Your changes were saved successfully." })
+    }
+    setLoading(false)
+  }
 
   return (
     <div className="space-y-6">
@@ -43,6 +125,7 @@ export default function SettingsPage() {
           </TabsTrigger>
         </TabsList>
 
+        {/* ✅ Profile Tab with Supabase integration */}
         <TabsContent value="profile" className="space-y-6">
           <Card>
             <CardHeader>
@@ -66,38 +149,62 @@ export default function SettingsPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="firstName">First Name</Label>
-                  <Input id="firstName" placeholder="John" />
+                  <Input
+                    id="firstName"
+                    value={profile.firstName}
+                    onChange={(e) => setProfile({ ...profile, firstName: e.target.value })}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="lastName">Last Name</Label>
-                  <Input id="lastName" placeholder="Doe" />
+                  <Input
+                    id="lastName"
+                    value={profile.lastName}
+                    onChange={(e) => setProfile({ ...profile, lastName: e.target.value })}
+                  />
                 </div>
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
-                <Input id="email" type="email" placeholder="john.doe@example.com" />
+                <Input id="email" type="email" value={profile.email} disabled />
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="phone">Phone Number</Label>
-                <Input id="phone" type="tel" placeholder="+1 (555) 123-4567" />
+                <Input
+                  id="phone"
+                  type="tel"
+                  value={profile.phone}
+                  onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
+                />
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="address">Address</Label>
-                <Textarea id="address" placeholder="123 Main St, City, State 12345" />
+                <Textarea
+                  id="address"
+                  value={profile.address}
+                  onChange={(e) => setProfile({ ...profile, address: e.target.value })}
+                />
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="bio">Bio</Label>
-                <Textarea id="bio" placeholder="Tell us about yourself..." />
+                <Textarea
+                  id="bio"
+                  value={profile.bio}
+                  onChange={(e) => setProfile({ ...profile, bio: e.target.value })}
+                />
               </div>
 
-              <Button>Save Changes</Button>
+              <Button onClick={handleSaveProfile} disabled={loading}>
+                {loading ? "Saving..." : "Save Changes"}
+              </Button>
             </CardContent>
           </Card>
 
+          {/* Account Status card unchanged */}
           <Card>
             <CardHeader>
               <CardTitle>Account Status</CardTitle>
