@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { supabase } from "@/lib/supabaseClient"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -17,41 +18,40 @@ import {
 } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
-import { Clock, CheckCircle, AlertTriangle, MapPin, User, Calendar, Search, Eye, Edit, MessageSquare, Wrench } from 'lucide-react'
+import { Clock, CheckCircle, AlertTriangle, MapPin, User, Calendar, Search, Eye, Edit, MessageSquare, Wrench, XCircle } from 'lucide-react'
 import { useToast } from '@/components/ui/use-toast'
 
 interface IssueComment {
-  id: string;
-  author: string;
-  message: string;
-  timestamp: string;
-  isAdmin: boolean;
+  id: string
+  author: string
+  message: string
+  timestamp: string
+  isAdmin: boolean
 }
 
 interface Issue {
-  id: string;
-  title: string;
-  description: string;
-  category: string;
-  priority: string;
-  status: string;
-  submittedBy: string;
-  submittedDate: string;
-  location: string;
-  contact: string;
-  email: string;
-  assignedTo: string | null;
-  lastUpdated: string;
-  comments: IssueComment[];
+  id: string
+  title: string
+  description: string
+  priority: string
+  status: string
+  submittedBy: string
+  submittedDate: string
+  location: string
+  contact: string
+  email: string
+  assignedTo: string | null
+  lastUpdated: string
+  comments: IssueComment[]
 }
 
 interface Worker {
-  id: string;
-  name: string;
-  department: string;
-  status: "available" | "busy" | "offline";
-  currentTasks: number;
-  completedTasks: number;
+  id: string
+  name: string
+  department: string
+  status: "available" | "busy" | "offline"
+  current_tasks: number
+  completed_tasks: number
 }
 
 interface AdminIssuesListProps {
@@ -60,73 +60,9 @@ interface AdminIssuesListProps {
 
 export function AdminIssuesList({ filter }: AdminIssuesListProps) {
   const [searchTerm, setSearchTerm] = useState("")
-  const [issues, setIssues] = useState<Issue[]>([
-    {
-      id: "ISS-001",
-      title: "Broken Street Light on Main Street",
-      description: "The street light near the intersection has been out for 3 days.",
-      category: "Infrastructure",
-      priority: "high",
-      status: "pending",
-      submittedBy: "John Doe",
-      submittedDate: "2024-01-15",
-      location: "Main St & Oak Ave",
-      contact: "555-1234",
-      email: "john.doe@example.com",
-      assignedTo: null,
-      lastUpdated: "2024-01-15",
-      comments: [],
-    },
-    {
-      id: "ISS-002",
-      title: "Pothole on Elm Street",
-      description: "Large pothole causing damage to vehicles.",
-      category: "Roads",
-      priority: "medium",
-      status: "in-progress",
-      submittedBy: "Jane Smith",
-      submittedDate: "2024-01-14",
-      location: "Elm Street, near School",
-      contact: "555-5678",
-      email: "jane.smith@example.com",
-      assignedTo: "Public Works Team",
-      lastUpdated: "2024-01-16",
-      comments: [{ id: "C001", author: "Admin Sarah", message: "Assigned to Public Works.", timestamp: "2024-01-16", isAdmin: true }],
-    },
-    {
-      id: "ISS-003",
-      title: "Garbage Collection Missed",
-      description: "Garbage not collected for the past week.",
-      category: "Utilities",
-      priority: "low",
-      status: "resolved",
-      submittedBy: "Mike Johnson",
-      submittedDate: "2024-01-10",
-      location: "Residential Block C",
-      contact: "555-9012",
-      email: "mike.j@example.com",
-      assignedTo: "Environmental Services",
-      lastUpdated: "2024-01-12",
-      comments: [{ id: "C002", author: "Admin Mike", message: "Issue resolved.", timestamp: "2024-01-12", isAdmin: true }],
-    },
-    {
-      id: "ISS-004",
-      title: "Urgent Water Leak",
-      description: "Major water pipe burst near city hall, causing flooding.",
-      category: "Utilities",
-      priority: "urgent",
-      status: "pending",
-      submittedBy: "City Resident",
-      submittedDate: "2024-07-25",
-      location: "Near City Hall",
-      contact: "555-3333",
-      email: "resident@example.com",
-      assignedTo: null,
-      lastUpdated: "2024-07-25",
-      comments: [],
-    },
-  ])
-  const [loading, setLoading] = useState(false) // No longer fetching from DB
+  const [issues, setIssues] = useState<Issue[]>([])
+  const [workers, setWorkers] = useState<Worker[]>([])
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null)
   const [newComment, setNewComment] = useState("")
@@ -141,222 +77,93 @@ export function AdminIssuesList({ filter }: AdminIssuesListProps) {
 
   const { toast } = useToast()
 
-  // Mock workers data
-  const [workers, setWorkers] = useState<Worker[]>([
-    { id: "W001", name: "John Smith", department: "Public Works", status: "available", currentTasks: 2, completedTasks: 45 },
-    { id: "W002", name: "Maria Garcia", department: "Transportation", status: "busy", currentTasks: 4, completedTasks: 38 },
-    { id: "W003", name: "David Johnson", department: "Utilities", status: "available", currentTasks: 1, completedTasks: 52 },
-  ])
-
+  // Fetch issues + workers
   useEffect(() => {
-    // Simulate initial data load if needed, but for now, issues are hardcoded
-    setLoading(false)
+    const fetchData = async () => {
+      setLoading(true)
+      const { data: issuesData, error: issuesErr } = await supabase
+        .from("issues")
+        .select("*, workers(name, department)")
+        .order("created_at", { ascending: false })
+
+      const { data: workersData, error: workersErr } = await supabase
+        .from("workers")
+        .select("*")
+
+      if (issuesErr) setError(issuesErr.message)
+      if (workersErr) setError(workersErr.message)
+
+      if (issuesData) {
+        setIssues(
+          issuesData.map((i: any) => ({
+            id: i.id,
+            title: i.title,
+            description: i.description,
+            priority: i.priority,
+            status: i.status,
+            submittedBy: i.submitted_by || "Citizen",
+            submittedDate: i.created_at.split("T")[0],
+            location: i.location,
+            contact: i.contact || "",
+            email: i.email || "",
+            assignedTo: i.workers ? i.workers.name : null,
+            lastUpdated: i.created_at.split("T")[0],
+            comments: [], // can connect to comments table if needed
+          }))
+        )
+      }
+      if (workersData) setWorkers(workersData)
+      setLoading(false)
+    }
+
+    fetchData()
   }, [])
 
-  const handleViewDialogOpen = (issue: Issue) => {
-    setSelectedIssue(issue)
-    setDialogNewStatus(issue.status)
-    setDialogAssignedTo(issue.assignedTo || "")
-    setIsViewDialogOpen(true)
-  }
+  // Update issue status in DB
+  const handleUpdateIssueStatus = async (issueId: string, newStatus: string, assignedTo: string | null) => {
+    const { error } = await supabase
+      .from("issues")
+      .update({ status: newStatus, assigned_to: assignedTo || null })
+      .eq("id", issueId)
 
-  const handleQuickUpdateOpen = (issue: Issue) => {
-    setSelectedIssue(issue)
-    setQuickUpdateStatus(issue.status)
-    setIsUpdateDialogOpen(true)
-  }
-
-  const handleAssignWorkOpen = (issue: Issue) => {
-    setSelectedIssue(issue)
-    setAssignWorkerId(issue.assignedTo || "") // Pre-fill if already assigned
-    setAssignInstructions("") // Clear instructions for new assignment
-    setIsAssignWorkDialogOpen(true)
-  }
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "pending":
-        return <Clock className="w-4 h-4" />
-      case "in-progress":
-        return <AlertTriangle className="w-4 h-4" />
-      case "resolved":
-        return <CheckCircle className="w-4 h-4" />
-      case "rejected":
-        return <XCircle className="w-4 h-4" />
-      default:
-        return <Clock className="w-4 h-4" />
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" })
+      return
     }
-  }
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "pending":
-        return "bg-yellow-100 text-yellow-800"
-      case "in-progress":
-        return "bg-blue-100 text-blue-800"
-      case "resolved":
-        return "bg-green-100 text-green-800"
-      case "rejected":
-        return "bg-red-100 text-red-800"
-      default:
-        return "bg-gray-100 text-gray-800"
-    }
-  }
-
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case "urgent":
-        return "bg-red-100 text-red-800"
-      case "high":
-        return "bg-orange-100 text-orange-800"
-      case "medium":
-        return "bg-yellow-100 text-yellow-800"
-      case "low":
-        return "bg-green-100 text-green-800"
-      default:
-        return "bg-gray-100 text-gray-800"
-    }
-  }
-
-  const handleUpdateIssueStatus = (issueId: string, newStatus: string, assignedTo: string | null) => {
-    setIssues(prevIssues =>
-      prevIssues.map(issue =>
-        issue.id === issueId
-          ? {
-              ...issue,
-              status: newStatus,
-              assignedTo: assignedTo,
-              lastUpdated: new Date().toISOString().split('T')[0],
-            }
-          : issue
-      )
-    )
-    if (selectedIssue && selectedIssue.id === issueId) {
-      setSelectedIssue(prevSelected => ({
-        ...prevSelected!,
-        status: newStatus,
-        assignedTo: assignedTo,
-        lastUpdated: new Date().toISOString().split('T')[0],
-      }))
-    }
+    setIssues(prev => prev.map(i => i.id === issueId ? { ...i, status: newStatus, assignedTo: assignedTo } : i))
     setIsViewDialogOpen(false)
     setIsUpdateDialogOpen(false)
-    toast({
-      title: "Success",
-      description: `Issue ${issueId} status updated to ${newStatus}!`,
-    })
+    toast({ title: "Success", description: `Issue ${issueId} updated to ${newStatus}` })
   }
 
-  const handleAddComment = (issueId: string, comment: string) => {
-    if (!comment.trim()) {
-      toast({
-        title: "Warning",
-        description: "Comment cannot be empty.",
-        variant: "destructive",
-      })
+  // Assign worker
+  const handleAssignIssueToWorker = async (issueId: string, workerId: string, instructions: string) => {
+    const { error } = await supabase
+      .from("issues")
+      .update({ status: "in-progress", assigned_to: workerId })
+      .eq("id", issueId)
+
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" })
       return
     }
 
-    const adminAuthor = "Admin - Current User"
-    const newCommentObj: IssueComment = {
-      id: String(Date.now()),
-      author: adminAuthor,
-      message: comment,
-      timestamp: new Date().toLocaleString(),
-      isAdmin: true,
-    };
-
-    setIssues(prevIssues =>
-      prevIssues.map(issue =>
-        issue.id === issueId
-          ? {
-              ...issue,
-              comments: [...issue.comments, newCommentObj],
-              lastUpdated: new Date().toISOString().split('T')[0],
-            }
-          : issue
-      )
-    )
-    if (selectedIssue && selectedIssue.id === issueId) {
-      setSelectedIssue(prevSelected => ({
-        ...prevSelected!,
-        comments: [...prevSelected!.comments, newCommentObj],
-        lastUpdated: new Date().toISOString().split('T')[0],
-      }))
-    }
-    setNewComment("") // Clear the comment input
-    toast({
-      title: "Success",
-      description: "Comment added successfully!",
-    })
-  }
-
-  const handleAssignIssueToWorker = (issueId: string, workerId: string, instructions: string) => {
-    const assignedWorker = workers.find(w => w.id === workerId)
-    if (!assignedWorker) {
-      toast({
-        title: "Error",
-        description: "Selected worker not found.",
-        variant: "destructive",
-      })
-      return
-    }
-
-    // Update issue status and assignedTo
-    setIssues(prevIssues =>
-      prevIssues.map(issue =>
-        issue.id === issueId
-          ? {
-              ...issue,
-              status: "in-progress", // Automatically set to in-progress when assigned
-              assignedTo: assignedWorker.name,
-              lastUpdated: new Date().toISOString().split('T')[0],
-              comments: [...issue.comments, {
-                id: String(Date.now()),
-                author: "Admin - Current User",
-                message: `Assigned to ${assignedWorker.name} with instructions: "${instructions}"`,
-                timestamp: new Date().toLocaleString(),
-                isAdmin: true,
-              }]
-            }
-          : issue
-      )
-    )
-
-    // Update worker's task count and status
-    setWorkers(prevWorkers =>
-      prevWorkers.map(worker =>
-        worker.id === workerId
-          ? {
-              ...worker,
-              currentTasks: worker.currentTasks + 1,
-              status: worker.currentTasks + 1 >= 3 ? "busy" : worker.status,
-            }
-          : worker
-      )
-    )
-
+    toast({ title: "Assigned!", description: `Issue ${issueId} assigned.` })
     setIsAssignWorkDialogOpen(false)
-    toast({
-      title: "Issue Assigned!",
-      description: `Issue ${issueId} assigned to ${assignedWorker.name}.`,
-    })
   }
 
-
-  const filteredIssues = issues.filter((issue) => {
+  // Filtering
+  const filteredIssues = issues.filter(issue => {
     const matchesFilter =
       filter === "all" ||
       issue.status === filter ||
-      (filter === "urgent" && issue.priority === "urgent") ||
-      (filter === "pending" && issue.status === "pending") ||
-      (filter === "resolved" && issue.status === "resolved")
+      (filter === "urgent" && issue.priority === "urgent")
     const matchesSearch =
       issue.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       issue.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
       issue.submittedBy.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      issue.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      issue.id.toLowerCase().includes(searchTerm.toLowerCase())
+      issue.location.toLowerCase().includes(searchTerm.toLowerCase())
     return matchesFilter && matchesSearch
   })
 
