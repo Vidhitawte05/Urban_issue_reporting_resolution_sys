@@ -81,75 +81,85 @@ export default function ReportIssuePage() {
 
   // 🚀 Submit
   async function onSubmit(values: z.infer<typeof formSchema>) {
-    if (capturedImages.length === 0) {
-      toast({ title: "No Image", description: "Attach at least one picture.", variant: "destructive" })
-      return
-    }
-
-    setIsLoading(true)
-    try {
-      // Upload images
-      // 🚀 Upload images via API route
-const uploadedImageUrls: string[] = [];
-for (const img of capturedImages) {
-  const formData = new FormData();
-  formData.append("file", img.file);
-
-  const res = await fetch("/api/upload", { method: "POST", body: formData });
-  const result = await res.json();
-
-  if (!res.ok) {
-    throw new Error(result.error || "Upload failed");
+  if (capturedImages.length === 0) {
+    toast({ title: "No Image", description: "Attach at least one picture.", variant: "destructive" });
+    return;
   }
 
-  uploadedImageUrls.push(result.url);
-}
+  setIsLoading(true);
+  try {
+    // 🚀 Step 1: Send the first image to ML API
+    const formData = new FormData();
+    formData.append("file", capturedImages[0].file); // use first image
 
+    const mlRes = await fetch("http://127.0.0.1:8000/predict", {
+      method: "POST",
+      body: formData,
+    });
+    const mlResult = await mlRes.json();
 
-      // Get logged-in user
-      // client code (inside your ReportIssuePage component)
-// Inside onSubmit in ReportIssuePage
-// Get current session
-const { data: sessionData } = await supabase.auth.getSession();
-if (!sessionData?.session) {
-  toast({ title: "Auth required", description: "Please log in", variant: "destructive" });
-  return;
-}
-
-const token = sessionData.session.access_token;
-
-const res = await fetch("/api/issues", {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${token}`, // ✅ send token
-  },
-  body: JSON.stringify({
-    title: values.title,
-    description: values.description,
-    location: values.location,
-    category: values.category,
-    priority: values.priority,
-    images: uploadedImageUrls,
-  }),
-});
-
-
-const result = await res.json()
-if (!res.ok) {
-  toast({ title: "Insert failed", description: result.error, variant: "destructive" })
-} else {
-  toast({ title: "Success", description: "Issue reported successfully!" })
-}
-
-      form.reset()
-      setCapturedImages([])
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message || "Something went wrong.", variant: "destructive" })
-    } finally {
-      setIsLoading(false)
+    if (!mlResult.pothole_detected) {
+      toast({
+        title: "No Pothole Detected",
+        description: "Please upload a valid pothole image.",
+        variant: "destructive",
+      });
+      setIsLoading(false);
+      return;
     }
+
+    // 🚀 Step 2: Upload images (like before)
+    const uploadedImageUrls: string[] = [];
+    for (const img of capturedImages) {
+      const formData = new FormData();
+      formData.append("file", img.file);
+
+      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Upload failed");
+      uploadedImageUrls.push(result.url);
+    }
+
+    // 🚀 Step 3: Get session & insert into Supabase
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (!sessionData?.session) {
+      toast({ title: "Auth required", description: "Please log in", variant: "destructive" });
+      return;
+    }
+    const token = sessionData.session.access_token;
+
+    const res = await fetch("/api/issues", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        title: values.title,
+        description: values.description,
+        location: values.location,
+        category: values.category,
+        priority: values.priority,
+        images: uploadedImageUrls,
+      }),
+    });
+
+    const result = await res.json();
+    if (!res.ok) {
+      toast({ title: "Insert failed", description: result.error, variant: "destructive" });
+    } else {
+      toast({ title: "Success", description: "Issue reported successfully!" });
+    }
+
+    form.reset();
+    setCapturedImages([]);
+  } catch (err: any) {
+    toast({ title: "Error", description: err.message || "Something went wrong.", variant: "destructive" });
+  } finally {
+    setIsLoading(false);
   }
+}
+
 
   return (
     <div className="flex flex-col gap-6">
