@@ -52,6 +52,7 @@ export default function ReportIssuePage() {
     }
     e.target.value = ""
   }
+  
 
   // 📍 Use Current Location (with reverse geocoding)
   const handleUseCurrentLocation = (checked: boolean) => {
@@ -88,39 +89,59 @@ export default function ReportIssuePage() {
     setIsLoading(true)
     try {
       // Upload images
-      const uploadedImageUrls: string[] = []
-      for (const img of capturedImages) {
-        const fileExt = img.file.name.split(".").pop()
-        const fileName = `issues/${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
-        const { error: uploadError } = await supabase.storage.from("issues").upload(fileName, img.file)
-        if (uploadError) throw uploadError
-        const { data } = supabase.storage.from("issues").getPublicUrl(fileName)
-        uploadedImageUrls.push(data.publicUrl)
-      }
+      // 🚀 Upload images via API route
+const uploadedImageUrls: string[] = [];
+for (const img of capturedImages) {
+  const formData = new FormData();
+  formData.append("file", img.file);
+
+  const res = await fetch("/api/upload", { method: "POST", body: formData });
+  const result = await res.json();
+
+  if (!res.ok) {
+    throw new Error(result.error || "Upload failed");
+  }
+
+  uploadedImageUrls.push(result.url);
+}
+
 
       // Get logged-in user
-      const { data: userData, error: userError } = await supabase.auth.getUser()
-      if (userError || !userData?.user) {
-        toast({ title: "Auth Error", description: "Login required.", variant: "destructive" })
-        setIsLoading(false)
-        return
-      }
+      // client code (inside your ReportIssuePage component)
+// Inside onSubmit in ReportIssuePage
+// Get current session
+const { data: sessionData } = await supabase.auth.getSession();
+if (!sessionData?.session) {
+  toast({ title: "Auth required", description: "Please log in", variant: "destructive" });
+  return;
+}
 
-      // Call API route (server inserts using Service Role)
-      const res = await fetch("/api/issues", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...values,
-          images: uploadedImageUrls,
-          user_id: userData.user.id,
-        }),
-      })
+const token = sessionData.session.access_token;
 
-      const result = await res.json()
-      if (!res.ok) throw new Error(result.error)
+const res = await fetch("/api/issues", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${token}`, // ✅ send token
+  },
+  body: JSON.stringify({
+    title: values.title,
+    description: values.description,
+    location: values.location,
+    category: values.category,
+    priority: values.priority,
+    images: uploadedImageUrls,
+  }),
+});
 
-      toast({ title: "Success", description: "Issue reported successfully." })
+
+const result = await res.json()
+if (!res.ok) {
+  toast({ title: "Insert failed", description: result.error, variant: "destructive" })
+} else {
+  toast({ title: "Success", description: "Issue reported successfully!" })
+}
+
       form.reset()
       setCapturedImages([])
     } catch (err: any) {
