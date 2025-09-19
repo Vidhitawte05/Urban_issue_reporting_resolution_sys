@@ -1,5 +1,21 @@
 import { supabase } from "@/lib/supabaseClient"
 
+// ✅ NLP keyword filter for pothole-related issues
+function isPotholeRelated(text: string): boolean {
+  const potholeKeywords = [
+    "pothole",
+    "road crack",
+    "damaged road",
+    "hole in road",
+    "broken road",
+    "road damage"
+  ]
+
+  return potholeKeywords.some(keyword =>
+    text.toLowerCase().includes(keyword)
+  )
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json()
@@ -9,21 +25,36 @@ export async function POST(request: Request) {
       return new Response(JSON.stringify({ error: "No images provided" }), { status: 400 })
     }
 
-    // Step 1: Send first image to ML API
+    // 🔎 Step 1: NLP check for title + description
+    if (!isPotholeRelated(title) || !isPotholeRelated(description)) {
+      return new Response(
+        JSON.stringify({
+          error: "Only pothole-related issues (title & description) can be submitted."
+        }),
+        { status: 400 }
+      )
+    }
+
+    // 🔎 Step 2: Validate first image with ML API
     const imageBlob = await fetch(images[0]).then(r => r.blob())
     const fd = new FormData()
     fd.append("file", imageBlob)
+
     const mlRes = await fetch("http://127.0.0.1:8000/predict", {
       method: "POST",
       body: fd,
     })
+
     const mlResult = await mlRes.json()
 
     if (!mlResult.pothole_detected) {
-      return new Response(JSON.stringify({ error: "No pothole detected in the image." }), { status: 400 })
+      return new Response(
+        JSON.stringify({ error: "No pothole detected in the image." }),
+        { status: 400 }
+      )
     }
 
-    // Step 2: Insert into Supabase
+    // ✅ Step 3: Insert into Supabase if both checks pass
     const { data, error } = await supabase.from("issues").insert([
       { title, description, location, category, priority, images },
     ])

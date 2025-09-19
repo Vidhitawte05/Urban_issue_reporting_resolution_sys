@@ -60,8 +60,9 @@ export default function CommunityPage() {
     try {
       // 1) Fetch profiles (basic)
       const profilesRes = await supabase
-        .from("profiles")
-        .select("id, name, avatar_url, role, joined_at")
+  .from("profiles")
+  .select("id, first_name, last_name, avatar_url, role, joined_at")
+
 
       if (profilesRes.error) {
         console.error("profiles error:", profilesRes.error)
@@ -89,7 +90,8 @@ export default function CommunityPage() {
       // build members array preserving layout
       const membersList: Member[] = profiles.map((p: any) => ({
         id: p.id,
-        name: p.name ?? "Unknown",
+        name: p.first_name ?? "Unknown", 
+
         avatar_url: p.avatar_url ?? null,
         joined_at: p.joined_at ?? new Date().toISOString(),
         role: p.role ?? "Citizen",
