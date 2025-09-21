@@ -1,11 +1,11 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Search, User, Mail, Phone, MapPin, Edit, Trash, Plus } from 'lucide-react'
+import { Search, Mail, Phone, Edit, Trash, Plus } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -17,51 +17,21 @@ import {
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { useToast } from '@/components/ui/use-toast'
+import { supabase } from "@/lib/supabaseClient"
 
 interface Citizen {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  address: string;
-  issuesReported: number;
-  status: string;
-  avatar: string;
+  id: string
+  name: string
+  email: string
+  phone: string
+  address: string
+  issuesReported: number
+  status: string
+  avatar: string
 }
 
 export default function CitizensManagementPage() {
-  const [citizens, setCitizens] = useState<Citizen[]>([
-    {
-      id: "C001",
-      name: "Alice Wonderland",
-      email: "alice@example.com",
-      phone: "+1-555-1111",
-      address: "123 Rabbit Hole, Fantasyland",
-      issuesReported: 12,
-      status: "Active",
-      avatar: "/placeholder.svg?height=40&width=40",
-    },
-    {
-      id: "C002",
-      name: "Bob The Builder",
-      email: "bob@example.com",
-      phone: "+1-555-2222",
-      address: "456 Construction Site, Builderville",
-      issuesReported: 5,
-      status: "Active",
-      avatar: "/placeholder.svg?height=40&width=40",
-    },
-    {
-      id: "C003",
-      name: "Charlie Chaplin",
-      email: "charlie@example.com",
-      phone: "+1-555-3333",
-      address: "789 Silent Film St, Hollywood",
-      issuesReported: 1,
-      status: "Inactive",
-      avatar: "/placeholder.svg?height=40&width=40",
-    },
-  ])
+  const [citizens, setCitizens] = useState<Citizen[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [isAddCitizenDialogOpen, setIsAddCitizenDialogOpen] = useState(false)
   const [isEditCitizenDialogOpen, setIsEditCitizenDialogOpen] = useState(false)
@@ -69,59 +39,111 @@ export default function CitizensManagementPage() {
     name: "", email: "", phone: "", address: "", issuesReported: 0, status: "Active"
   })
   const [editingCitizen, setEditingCitizen] = useState<Citizen | null>(null)
-
   const { toast } = useToast()
 
-  const handleAddCitizen = () => {
+  // ✅ Fetch citizens from Supabase
+  useEffect(() => {
+    const fetchCitizens = async () => {
+      const { data, error } = await supabase.from("profiles").select("*")
+      if (error) {
+        toast({ title: "Error", description: error.message, variant: "destructive" })
+      } else {
+        const mapped = data.map((c: any) => ({
+          id: c.id,
+          name: c.name,
+          email: c.email,
+          phone: c.phone,
+          address: c.address,
+          issuesReported: c.issues_reported ?? 0,
+          status: c.status ?? "Active",
+          avatar: c.avatar_url ?? "/placeholder.svg?height=40&width=40"
+        }))
+        setCitizens(mapped)
+      }
+    }
+    fetchCitizens()
+  }, [])
+
+  // ✅ Add citizen
+  const handleAddCitizen = async () => {
     if (!newCitizen.name || !newCitizen.email || !newCitizen.phone) {
-      toast({
-        title: "Error",
-        description: "Please fill in all required fields.",
-        variant: "destructive",
-      })
+      toast({ title: "Error", description: "Please fill in all required fields.", variant: "destructive" })
       return
     }
-    const id = `C${String(citizens.length + 1).padStart(3, '0')}`
-    const citizenToAdd = { ...newCitizen, id, avatar: "/placeholder.svg?height=40&width=40" }
-    setCitizens([...citizens, citizenToAdd])
-    setNewCitizen({ name: "", email: "", phone: "", address: "", issuesReported: 0, status: "Active" })
-    setIsAddCitizenDialogOpen(false)
-    toast({
-      title: "Success",
-      description: `Citizen ${citizenToAdd.name} added successfully!`,
-    })
-  }
+    const { data, error } = await supabase.from("profiles").insert([{
+      name: newCitizen.name,
+      email: newCitizen.email,
+      phone: newCitizen.phone,
+      address: newCitizen.address,
+      issues_reported: newCitizen.issuesReported,
+      status: newCitizen.status,
+      avatar_url: "/placeholder.svg?height=40&width=40"
+    }]).select().single()
 
-  const handleEditCitizen = () => {
-    if (!editingCitizen?.name || !editingCitizen?.email || !editingCitizen?.phone) {
-      toast({
-        title: "Error",
-        description: "Please fill in all required fields.",
-        variant: "destructive",
-      })
-      return
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" })
+    } else {
+      setCitizens([...citizens, {
+        id: data.id,
+        name: data.name,
+        email: data.email,
+        phone: data.phone,
+        address: data.address,
+        issuesReported: data.issues_reported,
+        status: data.status,
+        avatar: data.avatar_url
+      }])
+      setNewCitizen({ name: "", email: "", phone: "", address: "", issuesReported: 0, status: "Active" })
+      setIsAddCitizenDialogOpen(false)
+      toast({ title: "Success", description: `Citizen ${data.name} added successfully!` })
     }
-    setCitizens(citizens.map(c => c.id === editingCitizen.id ? editingCitizen : c))
-    setIsEditCitizenDialogOpen(false)
-    toast({
-      title: "Success",
-      description: `Citizen ${editingCitizen.name} updated successfully!`,
-    })
   }
 
-  const handleDeleteCitizen = (id: string) => {
-    setCitizens(citizens.filter(c => c.id !== id))
-    toast({
-      title: "Success",
-      description: `Citizen ${id} deleted successfully!`,
-    })
+  // ✅ Edit citizen
+  const handleEditCitizen = async () => {
+    if (!editingCitizen) return
+    const { error } = await supabase.from("profiles").update({
+      name: editingCitizen.name,
+      email: editingCitizen.email,
+      phone: editingCitizen.phone,
+      address: editingCitizen.address,
+      issues_reported: editingCitizen.issuesReported,
+      status: editingCitizen.status,
+      avatar_url: editingCitizen.avatar
+    }).eq("id", editingCitizen.id)
+
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" })
+    } else {
+      setCitizens(citizens.map(c => c.id === editingCitizen.id ? editingCitizen : c))
+      setIsEditCitizenDialogOpen(false)
+      toast({ title: "Success", description: `Citizen ${editingCitizen.name} updated successfully!` })
+    }
   }
 
-  const filteredCitizens = citizens.filter(citizen =>
-    citizen.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    citizen.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    citizen.id.toLowerCase().includes(searchTerm.toLowerCase())
+  // ✅ Delete citizen
+  const handleDeleteCitizen = async (id: string) => {
+    const { error } = await supabase.from("profiles").delete().eq("id", id)
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" })
+    } else {
+      setCitizens(citizens.filter(c => c.id !== id))
+      toast({ title: "Success", description: `Citizen deleted successfully!` })
+    }
+  }
+
+  const filteredCitizens = citizens.filter((citizen) => {
+  const name = citizen.name || ""
+  const email = citizen.email || ""
+  const id = citizen.id || ""
+
+  return (
+    name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    id.toLowerCase().includes(searchTerm.toLowerCase())
   )
+})
+
 
   return (
     <div className="flex flex-col gap-6">
@@ -130,6 +152,7 @@ export default function CitizensManagementPage() {
         <p className="text-muted-foreground">Manage registered citizens and their activities.</p>
       </div>
 
+      {/* Search + Add */}
       <div className="flex items-center gap-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -142,11 +165,9 @@ export default function CitizensManagementPage() {
         </div>
         <Dialog open={isAddCitizenDialogOpen} onOpenChange={setIsAddCitizenDialogOpen}>
           <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" /> Add New Citizen
-            </Button>
+            <Button><Plus className="h-4 w-4 mr-2" /> Add New Citizen</Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[425px]">
+          <DialogContent>
             <DialogHeader>
               <DialogTitle>Add New Citizen</DialogTitle>
               <DialogDescription>Enter details for the new citizen account.</DialogDescription>
@@ -176,6 +197,7 @@ export default function CitizensManagementPage() {
         </Dialog>
       </div>
 
+      {/* Citizens list */}
       <Card>
         <CardHeader>
           <CardTitle>Registered Citizens</CardTitle>
@@ -185,7 +207,7 @@ export default function CitizensManagementPage() {
           <div className="space-y-4">
             {filteredCitizens.length === 0 ? (
               <div className="flex h-32 items-center justify-center rounded-lg border border-dashed">
-                <p className="text-center text-muted-foreground">No citizens found. Try adjusting your search criteria.</p>
+                <p className="text-muted-foreground">No citizens found. Try adjusting your search criteria.</p>
               </div>
             ) : (
               filteredCitizens.map((citizen) => (
@@ -193,16 +215,17 @@ export default function CitizensManagementPage() {
                   <div className="flex items-center gap-4">
                     <Avatar>
                       <AvatarImage src={citizen.avatar || "/placeholder.svg"} alt={citizen.name} />
-                      <AvatarFallback>{citizen.name.split(" ").map((n) => n[0]).join("")}</AvatarFallback>
+                      <AvatarFallback>
+  {citizen.name 
+    ? citizen.name.split(" ").map((n) => n[0]).join("") 
+    : "U"}
+</AvatarFallback>
+
                     </Avatar>
                     <div>
                       <h3 className="font-semibold">{citizen.name}</h3>
-                      <p className="text-sm text-muted-foreground flex items-center gap-1">
-                        <Mail className="h-3 w-3" /> {citizen.email}
-                      </p>
-                      <p className="text-sm text-muted-foreground flex items-center gap-1">
-                        <Phone className="h-3 w-3" /> {citizen.phone}
-                      </p>
+                      <p className="text-sm text-muted-foreground flex items-center gap-1"><Mail className="h-3 w-3" /> {citizen.email}</p>
+                      <p className="text-sm text-muted-foreground flex items-center gap-1"><Phone className="h-3 w-3" /> {citizen.phone}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-6">
@@ -215,39 +238,42 @@ export default function CitizensManagementPage() {
                       <p className="text-xs text-muted-foreground">Status</p>
                     </div>
                     <div className="flex gap-2">
+                      {/* Edit Citizen */}
                       <Dialog open={isEditCitizenDialogOpen && editingCitizen?.id === citizen.id} onOpenChange={setIsEditCitizenDialogOpen}>
                         <DialogTrigger asChild>
                           <Button variant="outline" size="sm" onClick={() => setEditingCitizen(citizen)}>
                             <Edit className="h-4 w-4" />
                           </Button>
                         </DialogTrigger>
-                        <DialogContent className="sm:max-w-[425px]">
+                        <DialogContent>
                           <DialogHeader>
                             <DialogTitle>Edit Citizen</DialogTitle>
                             <DialogDescription>Edit details for {editingCitizen?.name}.</DialogDescription>
                           </DialogHeader>
-                          <div className="grid gap-4 py-4">
-                            <div className="grid grid-cols-4 items-center gap-4">
-                              <Label htmlFor="edit-name" className="text-right">Name</Label>
-                              <Input id="edit-name" value={editingCitizen?.name || ''} onChange={(e) => setEditingCitizen({...editingCitizen!, name: e.target.value})} className="col-span-3" />
+                          {editingCitizen && (
+                            <div className="grid gap-4 py-4">
+                              <div className="grid grid-cols-4 items-center gap-4">
+                                <Label className="text-right">Name</Label>
+                                <Input value={editingCitizen.name} onChange={(e) => setEditingCitizen({...editingCitizen, name: e.target.value})} className="col-span-3" />
+                              </div>
+                              <div className="grid grid-cols-4 items-center gap-4">
+                                <Label className="text-right">Email</Label>
+                                <Input type="email" value={editingCitizen.email} onChange={(e) => setEditingCitizen({...editingCitizen, email: e.target.value})} className="col-span-3" />
+                              </div>
+                              <div className="grid grid-cols-4 items-center gap-4">
+                                <Label className="text-right">Phone</Label>
+                                <Input type="tel" value={editingCitizen.phone} onChange={(e) => setEditingCitizen({...editingCitizen, phone: e.target.value})} className="col-span-3" />
+                              </div>
+                              <div className="grid grid-cols-4 items-center gap-4">
+                                <Label className="text-right">Address</Label>
+                                <Input value={editingCitizen.address} onChange={(e) => setEditingCitizen({...editingCitizen, address: e.target.value})} className="col-span-3" />
+                              </div>
+                              <div className="grid grid-cols-4 items-center gap-4">
+                                <Label className="text-right">Status</Label>
+                                <Input value={editingCitizen.status} onChange={(e) => setEditingCitizen({...editingCitizen, status: e.target.value})} className="col-span-3" />
+                              </div>
                             </div>
-                            <div className="grid grid-cols-4 items-center gap-4">
-                              <Label htmlFor="edit-email" className="text-right">Email</Label>
-                              <Input id="edit-email" type="email" value={editingCitizen?.email || ''} onChange={(e) => setEditingCitizen({...editingCitizen!, email: e.target.value})} className="col-span-3" />
-                            </div>
-                            <div className="grid grid-cols-4 items-center gap-4">
-                              <Label htmlFor="edit-phone" className="text-right">Phone</Label>
-                              <Input id="edit-phone" type="tel" value={editingCitizen?.phone || ''} onChange={(e) => setEditingCitizen({...editingCitizen!, phone: e.target.value})} className="col-span-3" />
-                            </div>
-                            <div className="grid grid-cols-4 items-center gap-4">
-                              <Label htmlFor="edit-address" className="text-right">Address</Label>
-                              <Input id="edit-address" value={editingCitizen?.address || ''} onChange={(e) => setEditingCitizen({...editingCitizen!, address: e.target.value})} className="col-span-3" />
-                            </div>
-                            <div className="grid grid-cols-4 items-center gap-4">
-                              <Label htmlFor="edit-status" className="text-right">Status</Label>
-                              <Input id="edit-status" value={editingCitizen?.status || ''} onChange={(e) => setEditingCitizen({...editingCitizen!, status: e.target.value})} className="col-span-3" />
-                            </div>
-                          </div>
+                          )}
                           <DialogFooter>
                             <Button type="submit" onClick={handleEditCitizen}>Save Changes</Button>
                           </DialogFooter>

@@ -1,5 +1,7 @@
 import { AdminIssuesList } from "@/components/admin/admin-issues-list"
 
+
+
 export default function AllIssuesPage() {
   return (
     <div className="flex flex-col gap-6">

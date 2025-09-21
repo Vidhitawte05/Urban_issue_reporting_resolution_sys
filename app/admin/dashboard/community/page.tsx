@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { supabase } from "@/lib/supabaseClient"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -9,104 +10,96 @@ import { MessageSquare, Send, ThumbsUp, ThumbsDown, Flag } from 'lucide-react'
 import { useToast } from '@/components/ui/use-toast'
 
 interface CommunityPost {
-  id: string;
-  author: string;
-  avatar: string;
-  timestamp: string;
-  content: string;
-  likes: number;
-  dislikes: number;
-  comments: number;
-  isAdmin: boolean;
+  id: string
+  author: string
+  avatar: string
+  content: string
+  likes: number
+  dislikes: number
+  comments: number
+  isAdmin: boolean
+  created_at: string
 }
 
 export default function CommunityPage() {
-  const [posts, setPosts] = useState<CommunityPost[]>([
-    {
-      id: "P001",
-      author: "Admin Sarah",
-      avatar: "/placeholder.svg?height=32&width=32",
-      timestamp: "2 hours ago",
-      content: "Reminder: Community clean-up drive this Saturday at Central Park. Let's make our city shine!",
-      likes: 15,
-      dislikes: 0,
-      comments: 3,
-      isAdmin: true,
-    },
-    {
-      id: "P002",
-      author: "Citizen John",
-      avatar: "/placeholder.svg?height=32&width=32",
-      timestamp: "5 hours ago",
-      content: "Anyone else experiencing slow internet speeds in the downtown area?",
-      likes: 8,
-      dislikes: 2,
-      comments: 5,
-      isAdmin: false,
-    },
-    {
-      id: "P003",
-      author: "Citizen Jane",
-      avatar: "/placeholder.svg?height=32&width=32",
-      timestamp: "1 day ago",
-      content: "Thank you to the Public Works team for fixing the pothole on Elm Street so quickly!",
-      likes: 25,
-      dislikes: 0,
-      comments: 1,
-      isAdmin: false,
-    },
-  ])
+  const [posts, setPosts] = useState<CommunityPost[]>([])
   const [newPostContent, setNewPostContent] = useState("")
   const { toast } = useToast()
 
-  const handleNewPost = () => {
+  // Fetch posts
+  useEffect(() => {
+    const fetchPosts = async () => {
+      const { data, error } = await supabase
+        .from("community_posts")
+        .select("*")
+        .order("created_at", { ascending: false })
+
+      if (error) {
+        console.error(error)
+        toast({ title: "Error", description: "Failed to fetch posts", variant: "destructive" })
+      } else {
+        setPosts(data as CommunityPost[])
+      }
+    }
+
+    fetchPosts()
+  }, [toast])
+
+  // Add new post
+  const handleNewPost = async () => {
     if (!newPostContent.trim()) {
-      toast({
-        title: "Error",
-        description: "Post content cannot be empty.",
-        variant: "destructive",
-      })
+      toast({ title: "Error", description: "Post content cannot be empty.", variant: "destructive" })
       return
     }
-    const newPost: CommunityPost = {
-      id: `P${String(posts.length + 1).padStart(3, '0')}`,
-      author: "Admin - Current User", // Placeholder for logged-in admin
-      avatar: "/placeholder.svg?height=32&width=32",
-      timestamp: "Just now",
-      content: newPostContent,
-      likes: 0,
-      dislikes: 0,
-      comments: 0,
-      isAdmin: true,
+
+    const { data, error } = await supabase
+      .from("community_posts")
+      .insert([
+        {
+          author: "Admin - Current User", // Replace with logged-in admin user
+          avatar: "/placeholder.svg?height=32&width=32",
+          content: newPostContent,
+          is_admin: true,
+        }
+      ])
+      .select()
+
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" })
+    } else {
+      setPosts([...(data as CommunityPost[]), ...posts])
+      setNewPostContent("")
+      toast({ title: "Success", description: "Your post has been published!" })
     }
-    setPosts([newPost, ...posts]) // Add new post to the top
-    setNewPostContent("")
-    toast({
-      title: "Success",
-      description: "Your post has been published!",
-    })
   }
 
-  const handleLike = (id: string) => {
-    setPosts(posts.map(post =>
-      post.id === id ? { ...post, likes: post.likes + 1 } : post
-    ))
-    toast({
-      title: "Liked!",
-      description: "You liked this post.",
-    })
+  // Like
+  const handleLike = async (id: string, currentLikes: number) => {
+    const { error } = await supabase
+      .from("community_posts")
+      .update({ likes: currentLikes + 1 })
+      .eq("id", id)
+
+    if (!error) {
+      setPosts(posts.map(post => post.id === id ? { ...post, likes: post.likes + 1 } : post))
+      toast({ title: "Liked!", description: "You liked this post." })
+    }
   }
 
-  const handleDislike = (id: string) => {
-    setPosts(posts.map(post =>
-      post.id === id ? { ...post, dislikes: post.dislikes + 1 } : post
-    ))
-    toast({
-      title: "Disliked!",
-      description: "You disliked this post.",
-    })
+  // Dislike
+  const handleDislike = async (id: string, currentDislikes: number) => {
+    const { error } = await supabase
+      .from("community_posts")
+      .update({ dislikes: currentDislikes + 1 })
+      .eq("id", id)
+
+    if (!error) {
+      setPosts(posts.map(post => post.id === id ? { ...post, dislikes: post.dislikes + 1 } : post))
+      toast({ title: "Disliked!", description: "You disliked this post." })
+    }
   }
 
+  // Report
   const handleReport = (id: string) => {
     toast({
       title: "Reported",
@@ -121,6 +114,7 @@ export default function CommunityPage() {
         <p className="text-muted-foreground">Engage with citizens and manage community discussions.</p>
       </div>
 
+      {/* Create Post */}
       <Card>
         <CardHeader>
           <CardTitle>Create New Post</CardTitle>
@@ -138,6 +132,7 @@ export default function CommunityPage() {
         </CardContent>
       </Card>
 
+      {/* Posts List */}
       <Card>
         <CardHeader>
           <CardTitle>Recent Community Posts</CardTitle>
@@ -155,19 +150,21 @@ export default function CommunityPage() {
                   <div className="flex items-center gap-3 mb-3">
                     <Avatar>
                       <AvatarImage src={post.avatar || "/placeholder.svg"} alt={post.author} />
-                      <AvatarFallback>{post.author.split(" ").map((n) => n[0]).join("")}</AvatarFallback>
+                      <AvatarFallback>{post.author?.split(" ").map((n) => n[0]).join("") || "U"}</AvatarFallback>
                     </Avatar>
                     <div>
                       <h4 className="font-semibold">{post.author}</h4>
-                      <p className="text-xs text-muted-foreground">{post.timestamp}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(post.created_at).toLocaleString()}
+                      </p>
                     </div>
                   </div>
                   <p className="text-sm text-gray-800 mb-3">{post.content}</p>
                   <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                    <Button variant="ghost" size="sm" className="flex items-center gap-1" onClick={() => handleLike(post.id)}>
+                    <Button variant="ghost" size="sm" className="flex items-center gap-1" onClick={() => handleLike(post.id, post.likes)}>
                       <ThumbsUp className="h-4 w-4" /> {post.likes}
                     </Button>
-                    <Button variant="ghost" size="sm" className="flex items-center gap-1" onClick={() => handleDislike(post.id)}>
+                    <Button variant="ghost" size="sm" className="flex items-center gap-1" onClick={() => handleDislike(post.id, post.dislikes)}>
                       <ThumbsDown className="h-4 w-4" /> {post.dislikes}
                     </Button>
                     <Button variant="ghost" size="sm" className="flex items-center gap-1">

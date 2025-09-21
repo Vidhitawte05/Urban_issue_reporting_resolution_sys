@@ -1,3 +1,7 @@
+"use client"
+
+import { useEffect, useState } from "react"
+import { supabase } from "@/lib/supabaseClient"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
@@ -5,8 +9,94 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Separator } from "@/components/ui/separator"
+import { toast } from "@/components/ui/use-toast"
 
 export default function SettingsPage() {
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+
+  // State
+  const [systemName, setSystemName] = useState("")
+  const [adminEmail, setAdminEmail] = useState("")
+  const [timezone, setTimezone] = useState("")
+  const [maintenanceMode, setMaintenanceMode] = useState(false)
+  const [emailNotifications, setEmailNotifications] = useState(false)
+  const [smsNotifications, setSmsNotifications] = useState(false)
+  const [pushNotifications, setPushNotifications] = useState(false)
+
+  // keep admin row reference
+  const [adminId, setAdminId] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetchAdminSettings()
+  }, [])
+
+  async function fetchAdminSettings() {
+    setLoading(true)
+
+    // fetch first admin profile
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, email, system_name, timezone, maintenance_mode, email_notifications, sms_notifications, push_notifications")
+      .eq("role", "admin")
+      .limit(1)
+      .single()
+
+    if (error) {
+      console.error("Error fetching admin settings:", error)
+      toast({ title: "Error", description: error.message, variant: "destructive" })
+    } else if (data) {
+      setAdminId(data.id)
+      setSystemName(data.system_name || "")
+      setAdminEmail(data.email || "")
+      setTimezone(data.timezone || "")
+      setMaintenanceMode(data.maintenance_mode || false)
+      setEmailNotifications(data.email_notifications || false)
+      setSmsNotifications(data.sms_notifications || false)
+      setPushNotifications(data.push_notifications || false)
+    }
+
+    setLoading(false)
+  }
+
+  async function saveSettings(type: "general" | "notifications") {
+    if (!adminId) {
+      toast({ title: "Error", description: "Admin profile not found", variant: "destructive" })
+      return
+    }
+
+    setSaving(true)
+
+    let updateData: any = {}
+    if (type === "general") {
+      updateData = {
+        system_name: systemName,
+        email: adminEmail,
+        timezone,
+        maintenance_mode: maintenanceMode,
+      }
+    } else if (type === "notifications") {
+      updateData = {
+        email_notifications: emailNotifications,
+        sms_notifications: smsNotifications,
+        push_notifications: pushNotifications,
+      }
+    }
+
+    const { error } = await supabase.from("profiles").update(updateData).eq("id", adminId)
+
+    if (error) {
+      console.error("Update error:", error)
+      toast({ title: "Error", description: error.message, variant: "destructive" })
+    } else {
+      toast({ title: "Saved", description: "Settings updated successfully." })
+    }
+
+    setSaving(false)
+  }
+
+  if (loading) return <p className="mt-10 text-center">Loading settings...</p>
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
@@ -23,6 +113,7 @@ export default function SettingsPage() {
           <TabsTrigger value="security">Security</TabsTrigger>
         </TabsList>
 
+        {/* General Tab */}
         <TabsContent value="general" className="space-y-4">
           <Card>
             <CardHeader>
@@ -32,15 +123,15 @@ export default function SettingsPage() {
             <CardContent className="space-y-6">
               <div className="space-y-2">
                 <Label htmlFor="system-name">System Name</Label>
-                <Input id="system-name" defaultValue="Urban Connect Admin" />
+                <Input id="system-name" value={systemName} onChange={(e) => setSystemName(e.target.value)} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="admin-email">Admin Email</Label>
-                <Input id="admin-email" type="email" defaultValue="admin@urbanconnect.gov" />
+                <Input id="admin-email" type="email" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="timezone">Timezone</Label>
-                <Input id="timezone" defaultValue="UTC-5 (Eastern Time)" />
+                <Input id="timezone" value={timezone} onChange={(e) => setTimezone(e.target.value)} />
               </div>
               <Separator />
               <div className="flex items-center justify-between">
@@ -48,13 +139,16 @@ export default function SettingsPage() {
                   <Label>Maintenance Mode</Label>
                   <p className="text-sm text-muted-foreground">Enable maintenance mode for system updates</p>
                 </div>
-                <Switch />
+                <Switch checked={maintenanceMode} onCheckedChange={setMaintenanceMode} />
               </div>
-              <Button>Save Changes</Button>
+              <Button onClick={() => saveSettings("general")} disabled={saving}>
+                {saving ? "Saving..." : "Save Changes"}
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>
 
+        {/* Notifications Tab */}
         <TabsContent value="notifications" className="space-y-4">
           <Card>
             <CardHeader>
@@ -67,61 +161,38 @@ export default function SettingsPage() {
                   <Label>Email Notifications</Label>
                   <p className="text-sm text-muted-foreground">Receive email notifications for new issues</p>
                 </div>
-                <Switch defaultChecked />
+                <Switch checked={emailNotifications} onCheckedChange={setEmailNotifications} />
               </div>
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>SMS Notifications</Label>
                   <p className="text-sm text-muted-foreground">Receive SMS for urgent issues</p>
                 </div>
-                <Switch defaultChecked />
+                <Switch checked={smsNotifications} onCheckedChange={setSmsNotifications} />
               </div>
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>Push Notifications</Label>
                   <p className="text-sm text-muted-foreground">Browser push notifications</p>
                 </div>
-                <Switch />
+                <Switch checked={pushNotifications} onCheckedChange={setPushNotifications} />
               </div>
-              <Button>Save Preferences</Button>
+              <Button onClick={() => saveSettings("notifications")} disabled={saving}>
+                {saving ? "Saving..." : "Save Preferences"}
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>
 
-        <TabsContent value="departments" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Department Management</CardTitle>
-              <CardDescription>Manage departments and their settings</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground">Department management interface will be displayed here.</p>
-            </CardContent>
-          </Card>
+        {/* Other tabs placeholder */}
+        <TabsContent value="departments">
+          <Card><CardHeader><CardTitle>Department Management</CardTitle></CardHeader><CardContent><p>Coming soon...</p></CardContent></Card>
         </TabsContent>
-
-        <TabsContent value="users" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>User Management</CardTitle>
-              <CardDescription>Manage admin users and permissions</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground">User management interface will be displayed here.</p>
-            </CardContent>
-          </Card>
+        <TabsContent value="users">
+          <Card><CardHeader><CardTitle>User Management</CardTitle></CardHeader><CardContent><p>Coming soon...</p></CardContent></Card>
         </TabsContent>
-
-        <TabsContent value="security" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Security Settings</CardTitle>
-              <CardDescription>Configure security and access controls</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground">Security settings will be displayed here.</p>
-            </CardContent>
-          </Card>
+        <TabsContent value="security">
+          <Card><CardHeader><CardTitle>Security Settings</CardTitle></CardHeader><CardContent><p>Coming soon...</p></CardContent></Card>
         </TabsContent>
       </Tabs>
     </div>
