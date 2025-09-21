@@ -44,11 +44,7 @@ const menuItems = [
     href: "/admin/dashboard/community",
     icon: MessageSquare,
   },
-  {
-    title: "Departments",
-    href: "/admin/dashboard/departments",
-    icon: Building,
-  },
+  
   {
     title: "Analytics",
     href: "/admin/dashboard/analytics",
