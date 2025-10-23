@@ -37,12 +37,7 @@ const routes = [
     href: "/dashboard/resolved",
     color: "text-emerald-500",
   },
-  {
-    label: "Guest Reports",
-    icon: AlertCircle,
-    href: "/dashboard/guest-reports",
-    color: "text-red-500",
-  },
+  
   {
     label: "Community",
     icon: Users,
