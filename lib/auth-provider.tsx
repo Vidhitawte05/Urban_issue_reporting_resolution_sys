@@ -1,51 +1,38 @@
 "use client"
 
-import { createContext, useContext, useState, type ReactNode } from "react"
+import { createContext, useContext, useEffect, useState } from "react"
+import { supabase } from "@/lib/supabaseClient"
 
-interface User {
-  id: string
-  name: string
-  email: string
-  role: "user" | "moderator" | "authority"
-}
+const AuthContext = createContext<any>(null)
 
-interface AuthContextType {
-  user: User | null
-  login: (email: string, password: string) => Promise<void>
-  logout: () => void
-  isLoading: boolean
-}
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [session, setSession] = useState<any>(null)
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined)
-
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
-
-  const login = async (email: string, password: string) => {
-    setIsLoading(true)
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000))
-    setUser({
-      id: "1",
-      name: "John Doe",
-      email,
-      role: "user",
+  useEffect(() => {
+    // Fetch session once on load
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session)
     })
-    setIsLoading(false)
-  }
 
-  const logout = () => {
-    setUser(null)
-  }
+    // Subscribe to auth changes
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+    })
 
-  return <AuthContext.Provider value={{ user, login, logout, isLoading }}>{children}</AuthContext.Provider>
+    return () => {
+      listener.subscription.unsubscribe()
+    }
+  }, [])
+
+  return (
+    <AuthContext.Provider value={{ supabase, session }}>
+      {children}
+    </AuthContext.Provider>
+  )
 }
 
-export function useAuth() {
+export const useAuth = () => {
   const context = useContext(AuthContext)
-  if (context === undefined) {
-    throw new Error("useAuth must be used within an AuthProvider")
-  }
+  if (!context) throw new Error("useAuth must be used within AuthProvider")
   return context
 }
