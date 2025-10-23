@@ -89,8 +89,8 @@ export default function MyReportsPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
-        <h1 className="text-3xl font-bold tracking-tight">My Reports</h1>
-        <p className="text-muted-foreground">View and track all the issues you have reported.</p>
+        <h1 className="text-3xl font-bold tracking-tight">All issues</h1>
+        <p className="text-muted-foreground">View and track all the issues have reported.</p>
       </div>
 
       <div className="flex flex-col gap-4">
@@ -118,10 +118,10 @@ export default function MyReportsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Your Reported Issues</CardTitle>
+            <CardTitle>All Reported Issues</CardTitle>
             <CardDescription>
               {statusFilter === "all"
-                ? "All issues you have reported"
+                ? "All issues have reported"
                 : `Issues with status: ${statusFilter.replace("-", " ")}`}
             </CardDescription>
           </CardHeader>

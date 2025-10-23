@@ -1,30 +1,41 @@
-// app/api/upload/route.ts
-import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY! // Service role → bypass RLS
-);
+import { createServerClient } from "@supabase/ssr"
+import { cookies } from "next/headers"
 
 export async function POST(req: Request) {
-  const formData = await req.formData();
-  const file = formData.get("file") as File;
+  try {
+    const formData = await req.formData()
+    const file = formData.get("file") as File
 
-  if (!file) {
-    return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
+    if (!file) throw new Error("No file provided")
+
+    const fileBuffer = Buffer.from(await file.arrayBuffer())
+    const fileName = `${Date.now()}-${file.name}`
+
+    const cookieStore = cookies()
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name) {
+            return cookieStore.get(name)?.value
+          },
+        },
+      }
+    )
+
+    const { data, error } = await supabase.storage
+      .from("issue")
+      .upload(fileName, fileBuffer, { contentType: file.type })
+
+    if (error) throw error
+
+    const { data: publicUrlData } = supabase.storage
+      .from("issue")
+      .getPublicUrl(fileName)
+
+    return Response.json({ url: publicUrlData.publicUrl })
+  } catch (err: any) {
+    return Response.json({ error: err.message }, { status: 400 })
   }
-
-  const ext = file.name.split(".").pop();
-  const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${ext}`;
-
-  const { error } = await supabaseAdmin.storage.from("issues").upload(fileName, file);
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 400 });
-  }
-
-  const { data } = supabaseAdmin.storage.from("issues").getPublicUrl(fileName);
-
-  return NextResponse.json({ url: data.publicUrl });
 }

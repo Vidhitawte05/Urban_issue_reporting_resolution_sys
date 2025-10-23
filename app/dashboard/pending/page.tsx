@@ -22,24 +22,21 @@ type Issue = {
   created_at: string
   updated_at?: string
   stage?: string
-  stage_progress?: number
-  estimated_time?: string
 }
 
 export default function PendingIssuesPage() {
   const [searchQuery, setSearchQuery] = useState("")
-  const [priorityFilter, setPriorityFilter] = useState("all")
   const [issues, setIssues] = useState<Issue[]>([])
   const [loading, setLoading] = useState(true)
 
-  // ✅ Fetch pothole issues
+  // ✅ Fetch pending pothole issues
   const fetchIssues = async () => {
     setLoading(true)
     const { data, error } = await supabase
       .from("issues")
       .select("*")
       .eq("status", "pending")
-      .eq("category", "pothole") // 👈 Only potholes
+      .eq("category", "potholes") // ✅ your defined category
       .order("created_at", { ascending: false })
 
     if (error) {
@@ -58,16 +55,13 @@ export default function PendingIssuesPage() {
   useEffect(() => {
     fetchIssues()
 
-    // ✅ Real-time subscription for pothole issues
+    // ✅ Real-time updates
     const channel = supabase
-      .channel("issues-changes")
+      .channel("issues-updates")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "issues" },
-        (payload) => {
-          console.log("Realtime change:", payload)
-          fetchIssues()
-        }
+        () => fetchIssues()
       )
       .subscribe()
 
@@ -76,17 +70,40 @@ export default function PendingIssuesPage() {
     }
   }, [])
 
-  // Filters
-  const filteredIssues = issues.filter((issue) => {
-    const matchesSearch =
-      issue.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      issue.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      issue.location.toLowerCase().includes(searchQuery.toLowerCase())
+  // ✅ Stage progress calculation
+  const getStageProgress = (stage?: string) => {
+    switch (stage) {
+      case "initial":
+        return 25
+      case "ai-analysis":
+        return 50
+      case "verification":
+        return 75
+      case "moderation":
+        return 90
+      case "resolved":
+        return 100
+      default:
+        return 10
+    }
+  }
 
-    const matchesPriority = priorityFilter === "all" || issue.priority === priorityFilter
-
-    return matchesSearch && matchesPriority
-  })
+  const getStageLabel = (stage?: string) => {
+    switch (stage) {
+      case "initial":
+        return "Initial Review"
+      case "ai-analysis":
+        return "AI Analysis"
+      case "verification":
+        return "Verification"
+      case "moderation":
+        return "Moderation"
+      case "resolved":
+        return "Resolved"
+      default:
+        return "Pending Review"
+    }
+  }
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
@@ -101,120 +118,112 @@ export default function PendingIssuesPage() {
     }
   }
 
-  const getStageLabel = (stage?: string) => {
-    switch (stage) {
-      case "initial":
-        return "Initial Review"
-      case "ai-analysis":
-        return "AI Analysis"
-      case "verification":
-        return "Verification"
-      case "moderation":
-        return "Moderation"
-      default:
-        return "Pending"
-    }
-  }
+  // ✅ Filter logic
+  const filteredIssues = issues.filter((issue) =>
+    issue.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    issue.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    issue.location.toLowerCase().includes(searchQuery.toLowerCase())
+  )
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
         <h1 className="text-3xl font-bold tracking-tight">Pending Pothole Issues</h1>
-        <p className="text-muted-foreground">Track pothole issues that are currently pending approval or assignment.</p>
+        <p className="text-muted-foreground">
+          Track pothole issues that are currently under review or verification.
+        </p>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-col gap-4 sm:flex-row">
-        <div className="relative flex-1">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            type="search"
-            placeholder="Search pothole issues..."
-            className="pl-8"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
+      {/* 🔍 Search bar */}
+      <div className="relative flex-1 max-w-md">
+        <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+        <Input
+          type="search"
+          placeholder="Search issues..."
+          className="pl-8"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
       </div>
 
-      {/* Issues */}
+      {/* 🧾 Issues list */}
       <Card>
         <CardHeader>
           <CardTitle>Pending Pothole Issues</CardTitle>
-          <CardDescription>All pothole issues awaiting verification or assignment</CardDescription>
+          <CardDescription>All pothole issues awaiting review or assignment.</CardDescription>
         </CardHeader>
         <CardContent>
           {loading ? (
             <p className="text-muted-foreground">Loading issues...</p>
           ) : filteredIssues.length > 0 ? (
             <div className="space-y-4">
-              {filteredIssues.map((issue) => (
-                <div key={issue.id} className="flex flex-col gap-2 rounded-lg border p-4">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h3 className="font-semibold">{issue.title}</h3>
-                      <p className="text-sm text-muted-foreground">{issue.location}</p>
+              {filteredIssues.map((issue) => {
+                const progress = getStageProgress(issue.stage)
+                const stageLabel = getStageLabel(issue.stage)
+                return (
+                  <div key={issue.id} className="rounded-lg border p-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="font-semibold">{issue.title}</h3>
+                        <p className="text-sm text-muted-foreground">{issue.location}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge className={`${getPriorityColor(issue.priority)} text-white`}>
+                          {issue.priority}
+                        </Badge>
+                        <Badge className="bg-yellow-500 text-white">{issue.status}</Badge>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Badge className={`${getPriorityColor(issue.priority)} text-white`}>
-                        {issue.priority}
-                      </Badge>
-                      <Badge className="bg-yellow-500 hover:bg-yellow-600 text-white">pending</Badge>
+
+                    <p className="text-sm text-muted-foreground">{issue.description}</p>
+
+                    {/* 🚦 Progress bar */}
+                    <div className="mt-2 space-y-1">
+                      <div className="flex justify-between text-xs">
+                        <span>Stage: {stageLabel}</span>
+                        <span>{progress}%</span>
+                      </div>
+                      <Progress value={progress} className="h-2" />
+                    </div>
+
+                    <div className="flex justify-between items-center text-xs text-muted-foreground pt-2">
+                      <div className="flex gap-3">
+                        <span>ID: {issue.id}</span>
+                        <span>Reported: {new Date(issue.created_at).toLocaleDateString()}</span>
+                      </div>
+                      <Button variant="ghost" size="sm" asChild>
+                        <Link href={`/dashboard/issues/${issue.id}`}>
+                          <ExternalLink className="h-4 w-4 mr-2" /> Details
+                        </Link>
+                      </Button>
                     </div>
                   </div>
-                  <p className="text-sm">{issue.description}</p>
-                  <div className="mt-2 space-y-2">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="font-medium">Current Stage: {getStageLabel(issue.stage)}</span>
-                      <span className="text-muted-foreground">{issue.stage_progress || 0}%</span>
-                    </div>
-                    <Progress value={issue.stage_progress || 0} className="h-2" />
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Clock className="h-4 w-4" />
-                      <span>Estimated time remaining: {issue.estimated_time || "N/A"}</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between pt-2 text-xs text-muted-foreground">
-                    <div className="flex items-center gap-4">
-                      <span>ID: {issue.id}</span>
-                      <span>Reported: {new Date(issue.created_at).toLocaleDateString()}</span>
-                    </div>
-                    <Button variant="ghost" size="sm" asChild>
-                      <Link href={`/dashboard/issues/${issue.id}`}>
-                        <ExternalLink className="mr-2 h-4 w-4" />
-                        Details
-                      </Link>
-                    </Button>
-                  </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           ) : (
-            <div className="flex h-32 items-center justify-center rounded-lg border border-dashed">
-              <p className="text-center text-muted-foreground">
-                No pending pothole issues found.{" "}
-                {searchQuery || priorityFilter !== "all"
-                  ? "Try adjusting your search."
-                  : "All potholes have been addressed!"}
+            <div className="flex h-32 items-center justify-center border border-dashed rounded-lg">
+              <p className="text-muted-foreground">
+                No pending pothole issues found. All caught up! 🎉
               </p>
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Info card */}
+      {/* ℹ️ Info card */}
       <Card>
         <CardHeader className="flex flex-row items-center gap-2">
           <AlertTriangle className="h-5 w-5 text-yellow-500" />
           <div>
             <CardTitle>What to Expect</CardTitle>
-            <CardDescription>Understanding the pothole issue process</CardDescription>
+            <CardDescription>How pothole reports are processed</CardDescription>
           </div>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">
-            Pothole reports go through multiple stages: initial review → AI analysis → verification → moderation.
-            Once complete, they are assigned to the road maintenance team.
+            Pothole reports go through multiple stages: Initial Review → AI Analysis → Verification → Moderation.
+            Once complete, they are assigned to the maintenance team for fixing.
           </p>
         </CardContent>
       </Card>

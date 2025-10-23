@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { toast } from "@/components/ui/use-toast"
 import { ThumbsUp, ThumbsDown, MessageSquare, Flag, Send } from "lucide-react"
 
+// 🧱 Types
 type CommunityPost = {
   id: string
   author: string
@@ -21,77 +22,119 @@ type CommunityPost = {
   created_at: string
 }
 
+type Comment = {
+  id: string
+  post_id: string
+  author: string
+  avatar?: string | null
+  content: string
+  created_at: string
+}
+
 export default function CommunityPage() {
   const [posts, setPosts] = useState<CommunityPost[]>([])
   const [newPostContent, setNewPostContent] = useState("")
   const [loading, setLoading] = useState(true)
+  const [comments, setComments] = useState<Record<string, Comment[]>>({})
+  const [newComment, setNewComment] = useState<Record<string, string>>({})
 
   useEffect(() => {
     fetchPosts()
   }, [])
 
+  // ✅ Fetch posts
   async function fetchPosts() {
     setLoading(true)
-    const { data, error } = await supabase
-      .from("community_posts")
-      .select("*")
-      .order("created_at", { ascending: false })
-
+    const { data, error } = await supabase.from("community_posts").select("*").order("created_at", { ascending: false })
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" })
     } else {
       setPosts(data || [])
+      // load comments for each post
+      data?.forEach((p) => fetchComments(p.id))
     }
     setLoading(false)
   }
 
+  // ✅ Fetch comments for a post
+  async function fetchComments(postId: string) {
+    const { data, error } = await supabase
+      .from("community_comments")
+      .select("*")
+      .eq("post_id", postId)
+      .order("created_at", { ascending: true })
+
+    if (error) return
+    setComments((prev) => ({ ...prev, [postId]: data || [] }))
+  }
+
+  // ✅ Add new post (fetch user info from session + profiles)
   async function handleNewPost() {
     if (!newPostContent.trim()) {
       toast({ title: "Error", description: "Post content cannot be empty", variant: "destructive" })
       return
     }
 
-    const { error } = await supabase.from("community_posts").insert([
-      {
-        author: "Admin User", // Replace with logged-in user from profiles
-        avatar: "/placeholder.svg?height=32&width=32",
-        content: newPostContent.trim(),
-        is_admin: true,
-      },
-    ])
+    const { data: sessionData } = await supabase.auth.getSession()
+    const user = sessionData?.session?.user
+    if (!user) {
+      toast({ title: "Login Required", description: "Please log in to post.", variant: "destructive" })
+      return
+    }
 
+    const { data: profileData } = await supabase.from("profiles").select("first_name, last_name, role").eq("id", user.id).single()
+
+    const newPost = {
+      author: profileData?.first_name + " " + profileData?.last_name || user.email,
+      
+      content: newPostContent.trim(),
+      is_admin: profileData?.role === "admin",
+    }
+
+    const { error } = await supabase.from("community_posts").insert([newPost])
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" })
     } else {
-      toast({ title: "Posted", description: "Your post has been added." })
+      toast({ title: "Posted", description: "Your post has been shared." })
       setNewPostContent("")
       fetchPosts()
     }
   }
 
-  async function handleLike(id: string) {
-    const { error } = await supabase.rpc("increment_likes", { post_id: id })// optional RPC
-    if (error) {
-      // fallback: direct update
-      await supabase.from("community_posts").update({ likes: supabase.rpc("likes+1") }).eq("id", id)
-    }
-    fetchPosts()
-  }
+  // ✅ Add comment to a post
+  async function handleAddComment(postId: string) {
+    const content = newComment[postId]?.trim()
+    if (!content) return
 
-  async function handleDislike(id: string) {
-    const { error } = await supabase.rpc("increment_dislikes", { post_id: id })
-    if (error) {
-      await supabase.from("community_posts").update({ dislikes: supabase.rpc("dislikes+1") }).eq("id", id)
+    const { data: sessionData } = await supabase.auth.getSession()
+    const user = sessionData?.session?.user
+    if (!user) {
+      toast({ title: "Login Required", description: "Please log in to comment.", variant: "destructive" })
+      return
     }
-    fetchPosts()
-  }
 
-  function handleReport(id: string) {
-    toast({ title: "Reported", description: `Post ${id} has been flagged.` })
+    const { data: profileData } = await supabase.from("profiles").select("full_name, avatar_url").eq("id", user.id).single()
+
+    const commentData = {
+      post_id: postId,
+      author: profileData?.full_name || user.email,
+      avatar: profileData?.avatar_url || "/placeholder.svg",
+      content,
+    }
+
+    const { error } = await supabase.from("community_comments").insert([commentData])
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" })
+    } else {
+      setNewComment((prev) => ({ ...prev, [postId]: "" }))
+      fetchComments(postId)
+    }
   }
+  
 
   return (
     <div className="flex flex-col gap-6">
+      {/* --- New Post --- */}
       <Card>
         <CardHeader>
           <CardTitle>Create New Post</CardTitle>
@@ -109,6 +152,7 @@ export default function CommunityPage() {
         </CardContent>
       </Card>
 
+      {/* --- Posts with comments --- */}
       <Card>
         <CardHeader>
           <CardTitle>Community Posts</CardTitle>
@@ -134,25 +178,52 @@ export default function CommunityPage() {
                     </p>
                   </div>
                   {post.is_admin && (
-                    <span className="ml-auto text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
-                      Admin
-                    </span>
+                    <span className="ml-auto text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">Admin</span>
                   )}
                 </div>
+
                 <p className="text-sm mb-3">{post.content}</p>
-                <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                  <Button variant="ghost" size="sm" onClick={() => handleLike(post.id)}>
+
+                {/* Likes/Comments/Report Buttons */}
+                <div className="flex items-center gap-4 text-sm text-muted-foreground mb-2">
+                  <Button variant="ghost" size="sm">
                     <ThumbsUp className="h-4 w-4 mr-1" /> {post.likes}
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => handleDislike(post.id)}>
+                  <Button variant="ghost" size="sm">
                     <ThumbsDown className="h-4 w-4 mr-1" /> {post.dislikes}
                   </Button>
-                  <Button variant="ghost" size="sm">
-                    <MessageSquare className="h-4 w-4 mr-1" /> {post.comments}
-                  </Button>
-                  <Button variant="ghost" size="sm" className="ml-auto" onClick={() => handleReport(post.id)}>
+                  <MessageSquare className="h-4 w-4 mr-1" /> {comments[post.id]?.length || 0}
+                  <Button variant="ghost" size="sm" className="ml-auto">
                     <Flag className="h-4 w-4 mr-1" /> Report
                   </Button>
+                </div>
+
+                {/* --- Comments Section --- */}
+                <div className="ml-8 space-y-2">
+                  {comments[post.id]?.map((c) => (
+                    <div key={c.id} className="flex items-start gap-2 text-sm">
+                      <Avatar className="h-6 w-6">
+                        <AvatarImage src={c.avatar || "/placeholder.svg"} />
+                        <AvatarFallback>{c.author.charAt(0)}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex flex-col bg-gray-50 dark:bg-gray-900 px-3 py-1 rounded-md w-fit">
+                        <span className="font-medium">{c.author}</span>
+                        <span>{c.content}</span>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Add Comment Input */}
+                  <div className="flex items-center gap-2 mt-2">
+                    <Input
+                      placeholder="Add a comment..."
+                      value={newComment[post.id] || ""}
+                      onChange={(e) => setNewComment((prev) => ({ ...prev, [post.id]: e.target.value }))}
+                    />
+                    <Button size="sm" onClick={() => handleAddComment(post.id)}>
+                      <Send className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               </div>
             ))

@@ -127,15 +127,34 @@ async function onSubmit(values: z.infer<typeof formSchema>) {
     }
 
     // 🚀 Step 2: Upload images
-    const uploadedImageUrls: string[] = [];
-    for (const img of capturedImages) {
-      const fd = new FormData();
-      fd.append("file", img.file);
-      const res = await fetch("/api/upload", { method: "POST", body: fd });
-      const result = await res.json();
-      if (!res.ok) throw new Error(result.error || "Upload failed");
-      uploadedImageUrls.push(result.url);
-    }
+    // 🚀 Step 2: Upload images to Supabase Storage (bucket: issues)
+const uploadedImageUrls: string[] = []
+for (const img of capturedImages) {
+  const fileExt = img.file.name.split('.').pop()
+  const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
+  const filePath = `before/${fileName}` // store inside "before/" folder
+
+  const { data, error } = await supabase.storage
+    .from("issues") // 🪣 citizen's "before image" bucket
+    .upload(filePath, img.file, {
+      cacheControl: "3600",
+      upsert: false,
+      contentType: img.file.type,
+    })
+
+  if (error) {
+    console.error("Upload failed:", error)
+    throw new Error(`Image upload failed: ${error.message}`)
+  }
+
+  // ✅ Generate public URL
+  const { data: publicUrlData } = supabase.storage
+    .from("issues")
+    .getPublicUrl(filePath)
+
+  uploadedImageUrls.push(publicUrlData.publicUrl)
+}
+
 
     // 🚀 Step 3: Get session
     const { data: sessionData } = await supabase.auth.getSession();

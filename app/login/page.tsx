@@ -9,10 +9,10 @@ import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { User, Shield } from "lucide-react"
 import { useRouter } from "next/navigation"
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { useAuth } from "@/lib/auth-provider"
 
 export default function LoginPage() {
-  const supabase = createClientComponentClient()
+  const { supabase, session } = useAuth()
   const router = useRouter()
 
   const [citizenForm, setCitizenForm] = useState({ email: "", password: "" })

@@ -24,9 +24,10 @@ type Activity = {
 
 type LeaderboardEntry = {
   id: string
-  full_name: string
+  first_name: string
+  last_name: string
   avatar_url?: string | null
-  issue_count: number
+  total_activity: number
 }
 
 export default function DashboardPage() {
@@ -40,52 +41,109 @@ export default function DashboardPage() {
   }, [])
 
   async function fetchDashboardData() {
-    // Fetch all issues
-    const { data: allIssuesData } = await supabase
+    // === 1️⃣ Fetch all issues ===
+    const { data: allIssuesData, error: allIssuesError } = await supabase
       .from("issues")
       .select("*")
       .order("created_at", { ascending: false })
-    if (allIssuesData) setAllIssues(allIssuesData)
+    if (!allIssuesError && allIssuesData) setAllIssues(allIssuesData)
 
-    // Fetch current user’s reports
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
+    // === 2️⃣ Fetch current user’s reports ===
+    const { data: authData } = await supabase.auth.getUser()
+    const user = authData?.user
     if (user) {
-      const { data: myReportsData } = await supabase
+      const { data: myReportsData, error: myError } = await supabase
         .from("issues")
         .select("*")
         .eq("user_id", user.id)
-      if (myReportsData) setMyReports(myReportsData)
+      if (!myError && myReportsData) setMyReports(myReportsData)
     }
 
-    // Fetch activities (optional table)
-    const { data: activityData } = await supabase
-      .from("activities")
-      .select("*")
+    // === 3️⃣ Fetch recent activity from multiple tables ===
+    const activities: Activity[] = []
+
+    // a. Issues (recently reported or resolved)
+    const { data: issueActivity } = await supabase
+      .from("issues")
+      .select("title, created_at, status")
       .order("created_at", { ascending: false })
       .limit(5)
-    if (activityData) setRecentActivity(activityData)
 
-    // Build leaderboard (issues grouped by user)
-    const { data: leaderboardData } = await supabase
-      .from("issues")
-      .select("user_id, profiles!inner(full_name, avatar_url)")
-    if (leaderboardData) {
+    issueActivity?.forEach((i) => {
+      activities.push({
+        id: i.title + i.created_at,
+        description:
+          i.status === "resolved"
+            ? `An issue "${i.title}" was resolved.`
+            : `A new issue "${i.title}" was reported.`,
+        created_at: i.created_at,
+      })
+    })
+
+    // b. Community posts
+    const { data: postActivity } = await supabase
+      .from("community_posts")
+      .select("author, created_at, content")
+      .order("created_at", { ascending: false })
+      .limit(5)
+
+    postActivity?.forEach((p) => {
+      activities.push({
+        id: p.author + p.created_at,
+        description: `${p.author} shared a new post.`,
+        created_at: p.created_at,
+      })
+    })
+
+    // Sort & trim top 8 combined activities
+    const sorted = activities
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, 8)
+    setRecentActivity(sorted)
+
+    // === 4️⃣ Leaderboard (using view or fallback aggregation) ===
+    // Prefer leaderboard_view if exists
+    const { data: leaderboardView } = await supabase
+      .from("leaderboard_view")
+      .select("*")
+      .order("total_activity", { ascending: false })
+
+    if (leaderboardView && leaderboardView.length > 0) {
+      setLeaderboard(leaderboardView)
+    } else {
+      // Fallback: aggregate manually from issues and community_posts
+      const { data: issueUsers } = await supabase
+        .from("issues")
+        .select("user_id, profiles!inner(first_name,last_name,avatar_url)")
+      const { data: postUsers } = await supabase
+        .from("community_posts")
+        .select("author")
+
       const counts: Record<string, LeaderboardEntry> = {}
-      for (const issue of leaderboardData as any[]) {
-        const uid = issue.user_id
+
+      issueUsers?.forEach((i: any) => {
+        const uid = i.user_id
         if (!counts[uid]) {
           counts[uid] = {
             id: uid,
-            full_name: issue.profiles.full_name ?? "Unknown",
-            avatar_url: issue.profiles.avatar_url,
-            issue_count: 0,
+            first_name: i.profiles.first_name || "Unknown",
+            last_name: i.profiles.last_name || "",
+            avatar_url: i.profiles.avatar_url,
+            total_activity: 0,
           }
         }
-        counts[uid].issue_count++
-      }
-      setLeaderboard(Object.values(counts).sort((a, b) => b.issue_count - a.issue_count))
+        counts[uid].total_activity++
+      })
+
+      postUsers?.forEach((p: any) => {
+        const authorKey = p.author
+        const entry = Object.values(counts).find(
+          (x) => `${x.first_name} ${x.last_name}`.trim() === authorKey
+        )
+        if (entry) entry.total_activity++
+      })
+
+      setLeaderboard(Object.values(counts).sort((a, b) => b.total_activity - a.total_activity))
     }
   }
 
@@ -94,10 +152,12 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="flex flex-col gap-2">
         <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-muted-foreground">Welcome back! Here's an overview of your community's issues.</p>
+        <p className="text-muted-foreground">
+          Welcome back! Here's an overview of your community’s reports and activities.
+        </p>
       </div>
 
-      {/* Analytics (keep as it is) */}
+      {/* Analytics */}
       <IssueStats />
 
       {/* Tabs: My Reports + All Issues */}
@@ -149,6 +209,7 @@ export default function DashboardPage() {
 
       {/* Recent Activity + Leaderboard */}
       <div className="grid gap-6 md:grid-cols-2">
+        {/* Recent Activity */}
         <Card>
           <CardHeader>
             <CardTitle>Recent Activity</CardTitle>
@@ -158,7 +219,10 @@ export default function DashboardPage() {
             {recentActivity.length > 0 ? (
               recentActivity.map((a) => (
                 <p key={a.id} className="text-sm">
-                  {a.description} – {new Date(a.created_at).toLocaleString()}
+                  {a.description} –{" "}
+                  <span className="text-muted-foreground">
+                    {new Date(a.created_at).toLocaleString()}
+                  </span>
                 </p>
               ))
             ) : (
@@ -167,6 +231,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
+        {/* Leaderboard */}
         <Card>
           <CardHeader>
             <CardTitle>Community Leaderboard</CardTitle>
@@ -178,12 +243,14 @@ export default function DashboardPage() {
                 <div key={user.id} className="flex items-center gap-2 py-1">
                   <img
                     src={user.avatar_url || "/placeholder-user.jpg"}
-                    alt={user.full_name}
+                    alt={`${user.first_name} ${user.last_name}`}
                     className="h-8 w-8 rounded-full"
                   />
-                  <span>{user.full_name}</span>
+                  <span>
+                    {user.first_name} {user.last_name}
+                  </span>
                   <span className="ml-auto text-sm text-muted-foreground">
-                    {user.issue_count} issues
+                    {user.total_activity} actions
                   </span>
                 </div>
               ))
