@@ -32,7 +32,7 @@ export function HeroSection() {
           <div className="flex items-center justify-center">
             <div className="relative w-full max-w-[500px] aspect-video overflow-hidden rounded-xl border bg-background shadow-xl">
               <img
-                src="/placeholder.svg?height=500&width=800"
+                src="/home_page.jpg?height=500&width=800"
                 alt="Urban Connect Platform"
                 className="object-cover w-full h-full"
               />
