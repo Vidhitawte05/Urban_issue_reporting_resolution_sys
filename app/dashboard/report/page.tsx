@@ -218,14 +218,7 @@ for (const img of capturedImages) {
                 </FormItem>
               )}/>
 
-              {/* Description */}
-              <FormField control={form.control} name="description" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Description</FormLabel>
-                  <FormControl><Textarea placeholder="Describe the pothole..." className="min-h-[120px]" {...field} /></FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}/>
+              
 
               {/* Location */}
               <div className="space-y-2">
